@@ -1,0 +1,17 @@
+{
+  "folders": [],
+ "files": [
+    {
+      "file_name": "Cờ Tàn Thực Dụng P1",
+      "file_path": "data/tan_cuc/co_tan_thuc_dung/001-co_tan_thuc_dung.json"
+    },
+    {
+      "file_name": "Cờ Tàn Thực Dụng P2",
+      "file_path": "data/tan_cuc/co_tan_thuc_dung/002-co_tan_thuc_dung.json"
+    },
+    {
+      "file_name": "Cờ Tàn Thực Dụng P3",
+      "file_path": "data/tan_cuc/co_tan_thuc_dung/003-co_tan_thuc_dung.json"
+    }
+ ]
+}

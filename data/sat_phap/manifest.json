@@ -1,0 +1,42 @@
+{
+  "folders": [
+    {
+      "folder_name": "1 Đến 20 Nước Liên Sát",
+      "folder_path": "data/sat_phap/1_den_20_nuoc_lien_sat"
+    },
+    {
+      "folder_name": "3712 Bài Sát Pháp Cơ Bản",
+      "folder_path": "data/sat_phap/3712_bai_sat_phap_co_ban"
+    }
+  ],
+  "files": [
+    {
+      "file_name": "Nước Sát Xe Pháo Mã Tốt",
+      "file_path": "data/sat_phap/001-nuoc-sat-xe-phao-ma-tot.json"
+    },
+    {
+      "file_name": "Sát Pháp Cơ Bản 27 Kiểu",
+      "file_path": "data/sat_phap/002-sat-phap-co-ban-27-kieu.json"
+    },
+    {
+      "file_name": "Tượng Kỳ Sát Pháp Cơ Bản",
+      "file_path": "data/sat_phap/003-Tuong-ky-sat-phap-can-ban.json"
+    },
+    {
+      "file_name": "Thực Chiến Sát Cục",
+      "file_path": "data/sat_phap/004-Thuc-chien-sat-cuc.json"
+    },
+    {
+      "file_name": "Tượng Kỳ Sát Thế",
+      "file_path": "data/sat_phap/005-Tuong-ky-sat-the.json"
+    },
+    {
+      "file_name": "Sát Cục Bảo Điển",
+      "file_path": "data/sat_phap/006-Sat-cuc-bao-dien.json"
+    },
+    {
+      "file_name": "Kiểm Tra Sức Cờ",
+      "file_path": "data/sat_phap/007-kiem-tra-suc-co.json"
+    }
+  ]
+}

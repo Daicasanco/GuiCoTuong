@@ -1,0 +1,98 @@
+{
+  "folders": [
+    {
+      "folder_name": "Cờ Tàn Thực Dụng",
+      "folder_path": "data/tan_cuc/co_tan_thuc_dung"
+    },
+    {
+      "folder_name": "Cờ Tàn Chuyên Tập",
+      "folder_path": "data/tan_cuc/chuyen_tap"
+    }
+  ],
+  "files": [
+    {
+      "file_name": "Cờ Tàn Tốt",
+      "file_path": "data/tan_cuc/001-co_tan_tot.json"
+    },
+    {
+      "file_name": "Cờ Tàn Mã",
+      "file_path": "data/tan_cuc/002-co_tan_ma.json"
+    },
+    {
+      "file_name": "Cờ Tàn Song Mã",
+      "file_path": "data/tan_cuc/003-co_tan_hai_ma.json"
+    },
+    {
+      "file_name": "Cờ Tàn Mã Tốt",
+      "file_path": "data/tan_cuc/004-co_tan_ma_tot.json"
+    },
+    {
+      "file_name": "Cờ Tàn Pháo",
+      "file_path": "data/tan_cuc/005-co_tan_phao.json"
+    },
+    {
+      "file_name": "Cờ Tàn Pháo Tốt",
+      "file_path": "data/tan_cuc/006-co_tan_phao_tot.json"
+    },
+    {
+      "file_name": "Cờ Tàn Song Pháo",
+      "file_path": "data/tan_cuc/007-co_tan_hai_phao.json"
+    },
+    {
+      "file_name": "Cờ Tàn Pháo Mã",
+      "file_path": "data/tan_cuc/008-co_tan_phao_ma.json"
+    },
+    {
+      "file_name": "Cờ Tàn Xe",
+      "file_path": "data/tan_cuc/009-co_tan_xe.json"
+    },
+    {
+      "file_name": "Cờ Tàn Xe Tốt",
+      "file_path": "data/tan_cuc/010-co_tan_xe_tot.json"
+    },
+    {
+      "file_name": "Xe Pháo Sĩ (Tượng) Thắng Xe Song Tượng",
+      "file_path": "data/tan_cuc/011-xe_phao_si_tuong_thang_xe_2_tuong.json"
+    },
+    {
+      "file_name": "Tàn Cục Bảo Điển",
+      "file_path": "data/tan_cuc/012-Tan-cuc-bao-dien.json"
+    },
+    {
+      "file_name": "Tàn Cục Thực Chiến",
+      "file_path": "data/tan_cuc/013-Tan-cuc-thuc-chien.json"
+    },
+    {
+      "file_name": "Tàn Cục Phi Tiêu",
+      "file_path": "data/tan_cuc/016-tan_cuc_phi_tieu.json"
+    },
+    {
+      "file_name": "Tượng Kỳ Tàn Cục Sát Thế",
+      "file_path": "data/tan_cuc/017-tuong_ky_tan_cuc_sat_the.json"
+    },
+    {
+      "file_name": "Kĩ Xảo Công Sát Cờ Tàn",
+      "file_path": "data/tan_cuc/018-ki_xao_cong_sat_co_tan.json"
+    },
+    {
+      "file_name": "Sát Chước Đại Toàn P1",
+      "file_path": "data/tan_cuc/019-sat-chuoc-dai-toan-p1.json"
+    },
+    {
+      "file_name": "Sát Chước Đại Toàn P2",
+      "file_path": "data/tan_cuc/020-sat-chuoc-dai-toan-p2.json"
+    },
+    {
+      "file_name": "Sát Chước Đại Toàn P3",
+      "file_path": "data/tan_cuc/021-sat-chuoc-dai-toan-p3.json"
+    },
+    {
+      "file_name": "Cờ Tàn Công Sát P1",
+      "file_path": "data/tan_cuc/022-co_tan_cong_sat_p1.json"
+    },
+    {
+      "file_name": "Cờ Tàn Công Sát P2",
+      "file_path": "data/tan_cuc/023-co_tan_cong_sat_p2.json"
+    }
+  ]
+}

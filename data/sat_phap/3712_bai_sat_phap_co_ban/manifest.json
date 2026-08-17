@@ -1,0 +1,37 @@
+{
+  "folders": [],
+ "files": [
+    {
+      "file_name": "3712 Bài Sát Pháp Cơ Bản P1",
+      "file_path": "data/sat_phap/3712_bai_sat_phap_co_ban/001-3712-bai-sat-phap-co-ban-(phan-1).json"
+    },
+    {
+      "file_name": "3712 Bài Sát Pháp Cơ Bản P2",
+      "file_path": "data/sat_phap/3712_bai_sat_phap_co_ban/002-3712-bai-sat-phap-co-ban-(phan-2).json"
+    },
+    {
+      "file_name": "3712 Bài Sát Pháp Cơ Bản P3",
+      "file_path": "data/sat_phap/3712_bai_sat_phap_co_ban/003-3712-bai-sat-phap-co-ban-(phan-3).json"
+    },
+    {
+      "file_name": "3712 Bài Sát Pháp Cơ Bản P4",
+      "file_path": "data/sat_phap/3712_bai_sat_phap_co_ban/004-3712-bai-sat-phap-co-ban-(phan-4).json"
+    },
+    {
+      "file_name": "3712 Bài Sát Pháp Cơ Bản P5",
+      "file_path": "data/sat_phap/3712_bai_sat_phap_co_ban/005-3712-bai-sat-phap-co-ban-(phan-5).json"
+    },
+    {
+      "file_name": "3712 Bài Sát Pháp Cơ Bản P6",
+      "file_path": "data/sat_phap/3712_bai_sat_phap_co_ban/006-3712-bai-sat-phap-co-ban-(phan-6).json"
+    },
+    {
+      "file_name": "3712 Bài Sát Pháp Cơ Bản P7",
+      "file_path": "data/sat_phap/3712_bai_sat_phap_co_ban/007-3712-bai-sat-phap-co-ban-(phan-7).json"
+    },
+    {
+      "file_name": "3712 Bài Sát Pháp Cơ Bản P8",
+      "file_path": "data/sat_phap/3712_bai_sat_phap_co_ban/008-3712-bai-sat-phap-co-ban-(phan-8).json"
+    }
+ ]
+}

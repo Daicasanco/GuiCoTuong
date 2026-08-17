@@ -1,0 +1,21 @@
+{
+  "folders": [],
+ "files": [
+    {
+      "file_name": "Thích Tình Nhã Thú P1",
+      "file_path": "data/co_the/001-Thich-tinh-nha-thu-p1.json"
+    },
+    {
+      "file_name": "Thích Tình Nhã Thú P2",
+      "file_path": "data/co_the/002-Thich-tinh-nha-thu-p2.json"
+    },
+    {
+      "file_name": "Thích Tình Nhã Thú P3",
+      "file_path": "data/co_the/003-Thich-tinh-nha-thu-p3.json"
+    },
+    {
+      "file_name": "Thế Cờ Thú Vị",
+      "file_path": "data/co_the/004-The-co-thu-vi.json"
+    }
+ ]
+}

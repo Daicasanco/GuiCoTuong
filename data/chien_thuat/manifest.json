@@ -1,0 +1,69 @@
+{
+  "folders": [],
+ "files": [
+    {
+      "file_name": "Chiếu Tướng Bắt Quân",
+      "file_path": "data/chien_thuat/001-chieu-tuong-bat-quan.json"
+    },
+    {
+      "file_name": "Đòn Bắt Đôi",
+      "file_path": "data/chien_thuat/002-don-bat-doi.json"
+    },
+    {
+      "file_name": "Đòn Xiên Táo",
+      "file_path": "data/chien_thuat/003-don-xien-tao.json"
+    },
+    {
+      "file_name": "Đòn Khống Chế",
+      "file_path": "data/chien_thuat/004-don-khong-che.json"
+    },
+    {
+      "file_name": "Đòn Vây Khốn",
+      "file_path": "data/chien_thuat/005-don-vay-khon.json"
+    },
+    {
+      "file_name": "Đòn Ngăn Chặn",
+      "file_path": "data/chien_thuat/006-don-ngan-chan.json"
+    },
+    {
+      "file_name": "Đòn Tháo Cản",
+      "file_path": "data/chien_thuat/007-don-thao-can.json"
+    },
+    {
+      "file_name": "Lôi Kéo Ra Xa",
+      "file_path": "data/chien_thuat/008-loi-keo-ra-xa.json"
+    },
+    {
+      "file_name": "Lôi Kéo Lại Gần",
+      "file_path": "data/chien_thuat/009-loi-keo-lai-gan.json"
+    },
+    {
+      "file_name": "Đòn Dờn Dứ",
+      "file_path": "data/chien_thuat/010-Don-don-du.json"
+    },
+    {
+      "file_name": "Đòn Chuyển Đổi",
+      "file_path": "data/chien_thuat/011-Don-chuyen-doi.json"
+    },
+    {
+      "file_name": "Đòn Tắc Đường",
+      "file_path": "data/chien_thuat/012-Don-tac-duong.json"
+    },
+    {
+      "file_name": "Đòn Phá Hoại",
+      "file_path": "data/chien_thuat/013-Don-pha-hoai.json"
+    },
+    {
+      "file_name": "Đòn Chuyển Quân",
+      "file_path": "data/chien_thuat/014-Don-chuyen-quan.json"
+    },
+    {
+      "file_name": "Đòn Thí Quân",
+      "file_path": "data/chien_thuat/015-Don-thi-quan.json"
+    },
+    {
+      "file_name": "Đòn Bắt Quân",
+      "file_path": "data/chien_thuat/016-Don-bat-quan.json"
+    }
+ ]
+}

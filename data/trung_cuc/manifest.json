@@ -1,0 +1,37 @@
+{
+  "folders": [],
+ "files": [
+    {
+      "file_name": "Chiến Thuật Trung Cục Cơ Bản",
+      "file_path": "data/trung_cuc/001-Chien-thuat-trung-cuc-co-ban.json"
+    },
+    {
+      "file_name": "Trung Cục Sát Pháp",
+      "file_path": "data/trung_cuc/002-Trung-cuc-sat-phap.json"
+    },
+    {
+      "file_name": "Trung Cục Diệu Thủ",
+      "file_path": "data/trung_cuc/003-Trung-cuc-dieu-thu.json"
+    },
+    {
+      "file_name": "Trung Cục Tinh Diệu Chiến Pháp",
+      "file_path": "data/trung_cuc/004-Trung-cuc-tinh-dieu-chien-phap.json"
+    },
+    {
+      "file_name": "Trung Cục Thực Chiến",
+      "file_path": "data/trung_cuc/005-Trung-cuc-thuc-chien.json"
+    },
+    {
+      "file_name": "Trung Tàn Kinh Điển",
+      "file_path": "data/trung_cuc/006-Trung-tan-kinh-dien.json"
+    },
+    {
+      "file_name": "Trung Tàn Thực Chiến P1",
+      "file_path": "data/trung_cuc/007-Trung-tan-thuc-chien-p1.json"
+    },
+    {
+      "file_name": "Trung Tàn Thực Chiến P2",
+      "file_path": "data/trung_cuc/007-Trung-tan-thuc-chien-p2.json"
+    }
+ ]
+}

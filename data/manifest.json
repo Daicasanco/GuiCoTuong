@@ -1,0 +1,30 @@
+{
+  "folders": [
+    {
+      "folder_name": "Trung Cục",
+      "folder_path": "data/trung_cuc"
+    },
+    {
+      "folder_name": "Tàn Cục",
+      "folder_path": "data/tan_cuc"
+    },
+    {
+      "folder_name": "Sát Pháp",
+      "folder_path": "data/sat_phap"
+    },
+    {
+      "folder_name": "Cờ Thế",
+      "folder_path": "data/co_the"
+    },
+    {
+      "folder_name": "Chiến Thuật",
+      "folder_path": "data/chien_thuat"
+    }
+  ],
+ "files": [
+    {
+      "file_name": "Thử Thách",
+      "file_path": "data/challenge.json"
+    }
+ ]
+}

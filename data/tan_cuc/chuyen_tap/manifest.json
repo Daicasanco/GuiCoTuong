@@ -1,0 +1,17 @@
+{
+  "folders": [],
+ "files": [
+    {
+      "file_name": "Xe Mã Chuyên Tập",
+      "file_path": "data/tan_cuc/chuyen_tap/001-xe_ma_chuyen_tap.json"
+    },
+    {
+      "file_name": "Pháo Tốt Chuyên Tập",
+      "file_path": "data/tan_cuc/chuyen_tap/002-phao_tot_chuyen_tap.json"
+    },
+    {
+      "file_name": "Mã Tốt Chuyên Tập",
+      "file_path": "data/tan_cuc/chuyen_tap/003-ma_tot_chuyen_tap.json"
+    }
+ ]
+}
