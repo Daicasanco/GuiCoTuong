@@ -1175,7 +1175,7 @@ export function syncNavbarWidth() {
     
     if (isMobile) {
         wrapper.style.width = '100%';
-        const availableHeight = window.innerHeight - 180 - 50; 
+        const availableHeight = window.innerHeight - 210 - 45; 
         const currentHeight = wrapper.offsetHeight;
         
         if (currentHeight > availableHeight) {
