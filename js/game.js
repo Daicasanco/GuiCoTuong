@@ -803,7 +803,7 @@ export function triggerMemorizeBot() {
                     let soundToPlay = 'move';
                     if (isCapture) soundToPlay = 'eat';
                     if (vschess.checkThreat(state.currentSituation)) soundToPlay = 'check';
-                    if (!vschess.hasLegalMove(state.currentSituation)) soundToPlay = 'lose';
+                    if (!vschess.hasLegalMove(state.currentSituation)) soundToPlay = 'tuyetsat';
                     playSound(soundToPlay, isCapture);
                     
                     import('./board.js').then(b => b.renderMoveHistory());
@@ -882,7 +882,7 @@ export function executeMove(moveCommand, isJump = false, isReverse = false) {
         if (isCapture) soundToPlay = 'eat';
         if (!isReverse) {
             if (vschess.checkThreat(state.currentSituation)) soundToPlay = 'check'; 
-            if (!vschess.hasLegalMove(state.currentSituation)) soundToPlay = 'lose'; 
+            if (!vschess.hasLegalMove(state.currentSituation)) soundToPlay = 'tuyetsat'; 
         }
         playSound(soundToPlay, isCapture);
     }
@@ -945,7 +945,7 @@ export function executeForwardStep(targetNode) {
     let soundToPlay = 'move';
     if (isCapture) soundToPlay = 'eat';
     if (vschess.checkThreat(state.currentSituation)) soundToPlay = 'check';
-    if (!vschess.hasLegalMove(state.currentSituation)) soundToPlay = 'lose';
+    if (!vschess.hasLegalMove(state.currentSituation)) soundToPlay = 'tuyetsat';
     playSound(soundToPlay, isCapture);
     
     renderMoveHistory();

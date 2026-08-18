@@ -1,5 +1,5 @@
 // sw.js
-const CACHE_NAME = '0.8.1';
+const CACHE_NAME = '0.8.2';
 
 const urlsToCache = [
     './',
@@ -57,7 +57,7 @@ const urlsToCache = [
     './style/br.webp', './style/bn.webp', './style/bb.webp', './style/ba.webp', './style/bk.webp', './style/bc.webp', './style/bp.webp',
     './style/wr.webp', './style/wn.webp', './style/wb.webp', './style/wa.webp', './style/wk.webp', './style/wc.webp', './style/wp.webp',
     './style/blind_b.webp', './style/blind_w.webp',
-    './sound/check.mp3', './sound/eat.mp3', './sound/illegal.mp3', './sound/move.mp3',
+    './sound/check.mp3', './sound/eat.mp3', './sound/illegal.mp3', './sound/move.mp3', './sound/tuyetsat.mp3',
 
     // DỮ LIỆU CÁC BÀI TẬP 
     './data/challenge.json',

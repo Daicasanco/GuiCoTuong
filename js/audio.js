@@ -8,7 +8,11 @@ const soundFiles = {
     eat: './sound/eat.mp3',
     capture: './sound/eat.mp3',
     check: './sound/check.mp3',
-    illegal: './sound/illegal.mp3'
+    illegal: './sound/illegal.mp3',
+    tuyetsat: './sound/tuyetsat.mp3',
+    win: './sound/tuyetsat.mp3',
+    lose: './sound/tuyetsat.mp3',
+    checkmate: './sound/tuyetsat.mp3'
 };
 
 function getAudio(name) {
@@ -59,4 +63,8 @@ export function playSelectSound() {
 
 export function playIllegalSound() {
     playAudio('illegal');
+}
+
+export function playTuyetSatSound() {
+    playAudio('tuyetsat');
 }
