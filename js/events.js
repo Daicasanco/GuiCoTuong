@@ -1482,6 +1482,64 @@ export function initEvents() {
     const cameraUpload = document.getElementById('camera-upload');
     if(cameraUpload) cameraUpload.onchange = (e) => handleImageRecognition(e.target.files[0]);
 
+    // LẮNG NGHE SỰ KIỆN DÁN ẢNH TỪ CLIPBOARD (Ctrl + V)
+    window.addEventListener('paste', async (e) => {
+        const clipboardData = e.clipboardData || window.clipboardData;
+        if (!clipboardData) return;
+
+        let imageFile = null;
+
+        // 1. Kiểm tra danh sách items trong clipboard
+        if (clipboardData.items) {
+            for (let i = 0; i < clipboardData.items.length; i++) {
+                const item = clipboardData.items[i];
+                if (item.type && item.type.startsWith('image/')) {
+                    imageFile = item.getAsFile();
+                    break;
+                }
+            }
+        }
+
+        // 2. Fallback kiểm tra clipboardData.files
+        if (!imageFile && clipboardData.files && clipboardData.files.length > 0) {
+            for (let i = 0; i < clipboardData.files.length; i++) {
+                const file = clipboardData.files[i];
+                if (file.type && file.type.startsWith('image/')) {
+                    imageFile = file;
+                    break;
+                }
+            }
+        }
+
+        // Nếu có tệp ảnh được dán vào
+        if (imageFile) {
+            e.preventDefault();
+            e.stopPropagation();
+            closeModal('import-modal');
+            showToast("📸 Đã phát hiện ảnh từ Clipboard! Đang nhận diện bàn cờ...");
+            handleImageRecognition(imageFile);
+        }
+    });
+
+    // HỖ TRỢ KÉO THẢ TỆP ẢNH VÀO CỬA SỔ
+    window.addEventListener('dragover', (e) => {
+        e.preventDefault();
+    });
+    window.addEventListener('drop', (e) => {
+        e.preventDefault();
+        if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+            const file = e.dataTransfer.files[0];
+            if (file.type && file.type.startsWith('image/')) {
+                closeModal('import-modal');
+                showToast("📸 Đã nhận ảnh kéo thả! Đang nhận diện bàn cờ...");
+                handleImageRecognition(file);
+            } else if (file.name.match(/\.(pgn|xqf|cbr|ccm|pfc|che|cbl)$/i)) {
+                closeModal('import-modal');
+                handleFileUpload(file);
+            }
+        }
+    });
+
     const btnOpenInfoModal = document.getElementById('btn-open-info-modal');
     if(btnOpenInfoModal) btnOpenInfoModal.onclick = () => { closeModal('export-modal'); openModal('info-modal'); };
     
