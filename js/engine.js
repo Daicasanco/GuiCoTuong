@@ -749,9 +749,11 @@ export function handleEngineOutput(text) {
         let isRedTurn = state.currentNode.fen.split(" ")[1] === "w";
         let turnPrefix = isRedTurn ? "Điểm Đỏ: " : "Điểm Đen: "; 
         let scoreText = "0"; let finalScoreForBar = 0; let relativeScore = 0;    
-        let winPct = 33.3, drawPct = 33.4, lossPct = 33.3;
+        let winPct = 0, drawPct = 0, lossPct = 0;
+        let hasWdlData = false;
 
         if (wdlMatch) {
+            hasWdlData = true;
             const w = parseInt(wdlMatch[1], 10);
             const d = parseInt(wdlMatch[2], 10);
             const l = parseInt(wdlMatch[3], 10);
@@ -784,11 +786,20 @@ export function handleEngineOutput(text) {
                 const scoreTextEl = document.getElementById("score-text");
                 if (scoreTextEl) scoreTextEl.innerText = turnPrefix + scoreText;
 
-                if (!wdlMatch) {
-                    const winProb = 1 / (1 + Math.exp(-finalScoreForBar / 280));
-                    winPct = Math.round(winProb * 80 * 10) / 10;
-                    lossPct = Math.round((1 - winProb) * 80 * 10) / 10;
+                if (!hasWdlData) {
+                    hasWdlData = true;
+                    // Sigmoid model: tính xác suất thắng của Đỏ từ centipawns (finalScoreForBar luôn theo góc Đỏ)
+                    const redWinProb = 1 / (1 + Math.exp(-finalScoreForBar / 200));
+                    const blackWinProb = 1 - redWinProb;
+                    // Xác suất hòa giảm dần khi chênh lệch điểm càng lớn
+                    const absCp = Math.abs(finalScoreForBar);
+                    const drawProb = Math.max(0, 0.30 - absCp * 0.0004);
+                    // Phân bổ tỷ lệ
+                    const remainForWinLoss = 1 - drawProb;
+                    winPct = Math.round(redWinProb * remainForWinLoss * 1000) / 10;
+                    lossPct = Math.round(blackWinProb * remainForWinLoss * 1000) / 10;
                     drawPct = Math.round((100 - winPct - lossPct) * 10) / 10;
+                    if (drawPct < 0) drawPct = 0;
                 }
 
                 if (state.currentNode && !window.isAnalyzingGameGlobal) {
@@ -807,12 +818,14 @@ export function handleEngineOutput(text) {
                 const scoreTextEl = document.getElementById("score-text");
                 if (scoreTextEl) scoreTextEl.innerText = turnPrefix + scoreText;
 
+                hasWdlData = true;
                 if (isRedWin) { winPct = 100; drawPct = 0; lossPct = 0; }
                 else { winPct = 0; drawPct = 0; lossPct = 100; }
             }
         }
 
-        if (rank === 1) {
+        // CHỈ cập nhật thanh WDL khi thực sự có dữ liệu mới (tránh ghi đè bằng giá trị mặc định)
+        if (rank === 1 && hasWdlData) {
             const winFill = document.getElementById("wdl-win-fill");
             const drawFill = document.getElementById("wdl-draw-fill");
             const lossFill = document.getElementById("wdl-loss-fill");
