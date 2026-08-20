@@ -559,9 +559,7 @@ function executePendingAction() {
             const isRedTurn = state.currentNode.fen.split(" ")[1] === "w";
             const willAIPlay = (isRedTurn && state.aiPlaysRed) || (!isRedTurn && state.aiPlaysBlack);
 
-            if (!willAIPlay && state.isAnalyzing) {
-                triggerEngineOnly();
-            }
+            triggerEngineOnly();
 
             fetchCloudBook(state.currentNode.fen);
         }
@@ -607,10 +605,16 @@ function triggerEngineOnly() {
 
     if (state.appMode !== 'vsbot') {
         state.engineModule.sendCommand(`setoption name Skill Level value ${state.aiSettings.skill}`);
-        state.engineModule.sendCommand(`setoption name MultiPV value ${state.aiSettings.multiPV}`);
+        state.engineModule.sendCommand(`setoption name MultiPV value ${state.isAnalyzing ? state.aiSettings.multiPV : 1}`);
     }
 
-    state.pvLines = []; clearArrow(); renderMultiPVList();
+    state.pvLines = []; 
+    if (state.isAnalyzing) {
+        clearArrow(); 
+        renderMultiPVList();
+    } else {
+        clearArrow();
+    }
 
     state.engineModule.sendCommand(`position fen ${state.currentNode.fen}`);
     
@@ -649,6 +653,10 @@ function triggerEngineOnly() {
             
             state.engineModule.sendCommand(`go depth ${analyzeDepth}`);
             isEngineSearching = true; 
+        } else {
+            // TÍNH TOÁN CHẠY NGẦM NHANH (SILENT BACKGROUND EVAL) ĐỂ CẬP NHẬT TỶ LỆ & ĐIỂM SỐ
+            state.engineModule.sendCommand(`go depth 12 movetime 150`);
+            isEngineSearching = true;
         }
     }
 }
@@ -855,8 +863,10 @@ export function handleEngineOutput(text) {
             };
             const now = Date.now();
             if (now - lastUiUpdateTime > 100) {
-                renderMultiPVList(); 
-                drawBestMoveArrow();
+                if (state.isAnalyzing) {
+                    renderMultiPVList(); 
+                    drawBestMoveArrow();
+                }
                 lastUiUpdateTime = now;
             }
         }
@@ -865,8 +875,10 @@ export function handleEngineOutput(text) {
     else if (text.startsWith("bestmove")) {
         isEngineSearching = false;
 
-        renderMultiPVList();
-        drawBestMoveArrow();
+        if (state.isAnalyzing) {
+            renderMultiPVList();
+            drawBestMoveArrow();
+        }
 
         if (pendingAction) {
             executePendingAction();
