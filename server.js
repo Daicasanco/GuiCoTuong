@@ -20,6 +20,11 @@ app.use((req, res, next) => {
     next();
 });
 
+// Route health check cho Render
+app.get('/healthz', (req, res) => {
+    res.status(200).send('OK');
+});
+
 // Cho phép truy cập file tĩnh (HTML, CSS, JS)
 app.use(express.static(__dirname));
 
@@ -77,9 +82,6 @@ app.post('/api/pikafish-recognize', upload.single('image'), async (req, res) => 
         console.error('❌ Lỗi xử lý proxy:', error.message);
         res.status(500).json({ code: 500, msg: 'Lỗi server nội bộ: ' + error.message });
     }
-// Route health check cho Render
-app.get('/healthz', (req, res) => {
-    res.status(200).send('OK');
 });
 
 // Bật Server
