@@ -826,6 +826,9 @@ export function handleEngineOutput(text) {
 
         // CHỈ cập nhật thanh WDL khi thực sự có dữ liệu mới (tránh ghi đè bằng giá trị mặc định)
         if (rank === 1 && hasWdlData) {
+            if (state.currentNode) {
+                state.currentNode.wdl = { win: winPct, draw: drawPct, loss: lossPct };
+            }
             const winFill = document.getElementById("wdl-win-fill");
             const drawFill = document.getElementById("wdl-draw-fill");
             const lossFill = document.getElementById("wdl-loss-fill");
@@ -962,17 +965,8 @@ export function triggerGoInstant() {
 export function forceStopEngine() {
     if (!state.engineModule || !isEngineSearching) return;
     pendingAction = null; 
-    
-    if (currentEngineInstance instanceof Worker) {
-        currentEngineInstance.terminate();
-        currentEngineInstance = null;
-        state.engineModule = null;
-        isEngineSearching = false;
-        initPikafish(currentWasmType); 
-    } else {
-        state.engineModule.sendCommand("stop");
-        isEngineSearching = false;
-    }
+    state.engineModule.sendCommand("stop");
+    isEngineSearching = false;
 }
 
 export function sendEngineCommand(cmd) {

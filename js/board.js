@@ -565,16 +565,23 @@ export function updateScoreBar(node = state.currentNode) {
     const drawFill = document.getElementById("wdl-draw-fill");
     const lossFill = document.getElementById("wdl-loss-fill");
     if (winFill && drawFill && lossFill) {
-        const cp = absRedScore * 100;
-        const redWinProb = 1 / (1 + Math.exp(-cp / 200));
-        const blackWinProb = 1 - redWinProb;
-        const absCp = Math.abs(cp);
-        const drawProb = Math.max(0, 0.30 - absCp * 0.0004);
-        const remainForWinLoss = 1 - drawProb;
-        let winPct = Math.round(redWinProb * remainForWinLoss * 1000) / 10;
-        let lossPct = Math.round(blackWinProb * remainForWinLoss * 1000) / 10;
-        let drawPct = Math.round((100 - winPct - lossPct) * 10) / 10;
-        if (drawPct < 0) drawPct = 0;
+        let winPct, drawPct, lossPct;
+        if (node && node.wdl) {
+            winPct = node.wdl.win;
+            drawPct = node.wdl.draw;
+            lossPct = node.wdl.loss;
+        } else {
+            const cp = absRedScore * 100;
+            const redWinProb = 1 / (1 + Math.exp(-cp / 200));
+            const blackWinProb = 1 - redWinProb;
+            const absCp = Math.abs(cp);
+            const drawProb = Math.max(0, 0.30 - absCp * 0.0004);
+            const remainForWinLoss = 1 - drawProb;
+            winPct = Math.round(redWinProb * remainForWinLoss * 1000) / 10;
+            lossPct = Math.round(blackWinProb * remainForWinLoss * 1000) / 10;
+            drawPct = Math.round((100 - winPct - lossPct) * 10) / 10;
+            if (drawPct < 0) drawPct = 0;
+        }
 
         winFill.style.width = `${winPct}%`;
         winFill.innerText = winPct >= 10 ? `Đỏ ${winPct}%` : (winPct >= 5 ? `${winPct}%` : '');
