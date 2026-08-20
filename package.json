@@ -1,6 +1,6 @@
 {
   "name": "tuong-ky-viet",
-  "version": "1.0.0",
+  "version": "0.8.7",
   "scripts": {
     "start": "node server.js"
   },
