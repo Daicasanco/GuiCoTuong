@@ -1,5 +1,5 @@
 // sw.js
-const CACHE_NAME = '0.8.9';
+const CACHE_NAME = '0.9.0';
 
 const urlsToCache = [
     './',

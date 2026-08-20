@@ -409,9 +409,11 @@ function drawAnimatingPiece() {
 }
 
 function drawBestMoveArrowCanvas() {
-    if (state.isAnimating || state.isEditMode || state.appMode === 'vsbot' 
-        || state.appMode === 'blind' || state.appMode === 'memorize' || state.appMode === 'puzzle') return;
+    if (state.isAnimating || state.isEditMode || state.appMode === 'blind' || state.appMode === 'memorize' || state.appMode === 'puzzle') return;
     
+    // Nếu ở chế độ đấu Bot và KHÔNG bật Thẩm cờ thì không vẽ mũi tên
+    if (state.appMode === 'vsbot' && !state.isAnalyzing) return;
+
     if (!state.appSettings.arrows) return;
 
     // Kiểm tra xem Động cơ AI có đang được bật hay không (Phân tích, Máy cầm Đỏ, Máy cầm Đen)
