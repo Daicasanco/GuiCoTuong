@@ -896,14 +896,9 @@ export function handleEngineOutput(text) {
         }
 
         const isRedTurn = state.currentNode.fen.split(" ")[1] === "w";
-        
-        if (state.appMode === 'vsbot' && !((isRedTurn && state.aiPlaysRed) || (!isRedTurn && state.aiPlaysBlack))) {
-            state.pendingAIMove = bestMove; 
-            hideAILoading();
-            return;
-        }
+        const isAITurn = (isRedTurn && state.aiPlaysRed) || (!isRedTurn && state.aiPlaysBlack);
 
-        if ((isRedTurn && state.aiPlaysRed) || (!isRedTurn && state.aiPlaysBlack)) {
+        if (isAITurn) {
             if (state.appMode === 'vsbot' && state.vsBotSettings.botStyle === 'human') {
                 const levelIdx = state.vsBotSettings.level - 1;
                 const currentLevelData = botProfiles.human[levelIdx];
