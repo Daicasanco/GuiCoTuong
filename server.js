@@ -79,8 +79,13 @@ app.post('/api/pikafish-recognize', upload.single('image'), async (req, res) => 
     }
 });
 
+// Route health check cho Render
+app.get('/healthz', (req, res) => {
+    res.status(200).send('OK');
+});
+
 // Bật Server
-app.listen(port, () => {
-    console.log(`\n✅ Máy chủ đã chạy thành công!`);
-    console.log(`🎮 Truy cập: http://localhost:${port}\n`);
+app.listen(port, '0.0.0.0', () => {
+    console.log(`\n✅ Máy chủ đã chạy thành công trên cổng ${port}!`);
+    console.log(`🎮 Truy cập: http://0.0.0.0:${port}\n`);
 });
