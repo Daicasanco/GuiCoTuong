@@ -40,6 +40,20 @@ export class UCIParser {
                 result.scoreValue = parseInt(scoreMateMatch[1]);
             }
 
+            // Phân tích tỷ lệ Thắng / Hòa / Thua: "wdl <win> <draw> <loss>" (tính theo phần nghìn: per-mille)
+            const wdlMatch = text.match(/wdl (\d+) (\d+) (\d+)/);
+            if (wdlMatch) {
+                const w = parseInt(wdlMatch[1], 10);
+                const d = parseInt(wdlMatch[2], 10);
+                const l = parseInt(wdlMatch[3], 10);
+                const total = w + d + l || 1000;
+                result.wdl = {
+                    win: Math.round((w / total) * 1000) / 10,
+                    draw: Math.round((d / total) * 1000) / 10,
+                    loss: Math.round((l / total) * 1000) / 10
+                };
+            }
+
             // Phân tích toàn bộ dãy nước đi gợi ý (PV - Principal Variation)
             const pvIndex = text.indexOf(" pv ");
             if (pvIndex !== -1) {

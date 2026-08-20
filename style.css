@@ -162,6 +162,27 @@ body {
 #score-bar-fill { height: 100%; background-color: #cc0000; transition: width 0.3s ease; }
 #score-text { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 12px; text-shadow: 1px 1px 2px black; }
 
+/* THANH TỶ LỆ THẮNG / HÒA / THUA (WDL) */
+.wdl-bar-wrapper {
+    width: 100%;
+    height: 18px;
+    flex-shrink: 0;
+    min-height: 18px;
+    display: flex;
+    border-radius: 4px;
+    overflow: hidden;
+    background: #e2e8f0;
+    font-size: 10px;
+    font-weight: 800;
+    line-height: 18px;
+    user-select: none;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+    margin-bottom: 8px;
+}
+.wdl-win { background: linear-gradient(135deg, #10b981, #059669); color: white; transition: width 0.3s ease; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wdl-draw { background: linear-gradient(135deg, #94a3b8, #64748b); color: white; transition: width 0.3s ease; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wdl-loss { background: linear-gradient(135deg, #ef4444, #dc2626); color: white; transition: width 0.3s ease; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 /* CSS MỚI: DANH SÁCH CÁC BIẾN MULTIPV */
 #multipv-list-container {display: flex;flex-direction: column;gap: 12px; width: 100%;}
 .multipv-item {display: flex;flex-direction: column;gap: 6px;padding-bottom: 10px;border-bottom: 1px solid #eee;font-size: 14px;color: #444;}
@@ -376,10 +397,18 @@ body.edit-mode #piece-palette-pc .palette-turn-toggle {
     #panel-ai .score-bar-wrapper {
         height: 14px !important;
         min-height: 14px !important;
-        margin: 3px 6px !important;
+        margin: 3px 6px 2px 6px !important;
     }
     #score-text {
         font-size: 10px !important;
+    }
+
+    #panel-ai .wdl-bar-wrapper {
+        height: 13px !important;
+        min-height: 13px !important;
+        margin: 0 6px 3px 6px !important;
+        font-size: 9px !important;
+        line-height: 13px !important;
     }
 
     #eval-graph-wrapper {

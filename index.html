@@ -330,9 +330,15 @@
                         </div>
 
                         <!-- THANH ĐIỂM SỐ VÀ BIỂU ĐỒ ĐIỂM SỐ LUÔN HIỂN THỊ -->
-                        <div class="score-bar-wrapper" style="margin: 10px 10px 5px 10px;">
+                        <div class="score-bar-wrapper" style="margin: 10px 10px 4px 10px;">
                             <div id="score-bar-fill" style="width: 50%;"></div>
                             <span id="score-text">0.00</span>
+                        </div>
+                        <!-- THANH TỶ LỆ THẮNG / HÒA / THUA (WDL) -->
+                        <div class="wdl-bar-wrapper" id="wdl-bar-wrapper" style="margin: 0 10px 6px 10px;" title="Tỷ lệ Thắng - Hòa - Thua (Pikafish WDL Model)">
+                            <div id="wdl-win-fill" class="wdl-win" style="width: 33.3%;">Thắng 33%</div>
+                            <div id="wdl-draw-fill" class="wdl-draw" style="width: 33.4%;">Hòa 34%</div>
+                            <div id="wdl-loss-fill" class="wdl-loss" style="width: 33.3%;">Thua 33%</div>
                         </div>
                         <div id="eval-graph-wrapper" style="margin: 5px 10px; height: 95px; background: #fafafa; border: 1px solid #e5e7eb; border-radius: 6px; position: relative; flex-shrink: 0; overflow: hidden;" title="Biểu đồ điểm số ván cờ (Bấm vào điểm để nhảy đến nước đi)">
                             <button id="btn-toggle-graph" title="Thu gọn / Mở rộng đồ thị" style="position: absolute; top: 3px; right: 5px; z-index: 10; background: rgba(255,255,255,0.85); border: 1px solid #cbd5e1; border-radius: 3px; width: 20px; height: 20px; font-size: 10px; cursor: pointer; display: flex; align-items: center; justify-content: center; user-select: none;">▲</button>

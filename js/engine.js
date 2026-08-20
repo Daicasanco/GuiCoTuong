@@ -38,28 +38,28 @@ export function getDeviceTier() {
 
 export let botProfiles = { 
     standard: [
-        {id: 1, levelName: "Cấp 1", uciSkillLevel: 0, searchDepth: 4, maxMovetimeMs: 200},
-        {id: 2, levelName: "Cấp 2", uciSkillLevel: 2, searchDepth: 6, maxMovetimeMs: 400},
-        {id: 3, levelName: "Cấp 3", uciSkillLevel: 4, searchDepth: 8, maxMovetimeMs: 600},
-        {id: 4, levelName: "Cấp 4", uciSkillLevel: 6, searchDepth: 10, maxMovetimeMs: 800},
-        {id: 5, levelName: "Cấp 5", uciSkillLevel: 9, searchDepth: 12, maxMovetimeMs: 1000},
-        {id: 6, levelName: "Cấp 6", uciSkillLevel: 12, searchDepth: 14, maxMovetimeMs: 1200},
-        {id: 7, levelName: "Cấp 7", uciSkillLevel: 15, searchDepth: 16, maxMovetimeMs: 1500},
-        {id: 8, levelName: "Cấp 8", uciSkillLevel: 17, searchDepth: 18, maxMovetimeMs: 2000},
-        {id: 9, levelName: "Cấp 9", uciSkillLevel: 19, searchDepth: 20, maxMovetimeMs: 2500},
-        {id: 10, levelName: "Cấp 10", uciSkillLevel: 20, searchDepth: 24, maxMovetimeMs: 3500}
+        {id: 1, levelName: "Cấp 1 - Tập sự (Elo 800)", uciSkillLevel: 0, searchDepth: 3, maxMovetimeMs: 150},
+        {id: 2, levelName: "Cấp 2 - Nhập môn (Elo 1000)", uciSkillLevel: 2, searchDepth: 5, maxMovetimeMs: 300},
+        {id: 3, levelName: "Cấp 3 - Nghiệp dư (Elo 1200)", uciSkillLevel: 4, searchDepth: 7, maxMovetimeMs: 450},
+        {id: 4, levelName: "Cấp 4 - Phong trào (Elo 1400)", uciSkillLevel: 6, searchDepth: 9, maxMovetimeMs: 650},
+        {id: 5, levelName: "Cấp 5 - Bán chuyên (Elo 1600)", uciSkillLevel: 9, searchDepth: 11, maxMovetimeMs: 900},
+        {id: 6, levelName: "Cấp 6 - Kiện tướng Huyện (Elo 1800)", uciSkillLevel: 12, searchDepth: 13, maxMovetimeMs: 1200},
+        {id: 7, levelName: "Cấp 7 - Kiện tướng Tỉnh (Elo 2000)", uciSkillLevel: 15, searchDepth: 15, maxMovetimeMs: 1500},
+        {id: 8, levelName: "Cấp 8 - Dự bị Quốc Gia (Elo 2200)", uciSkillLevel: 17, searchDepth: 17, maxMovetimeMs: 1800},
+        {id: 9, levelName: "Cấp 9 - Đại Kiện Tướng (Elo 2500)", uciSkillLevel: 19, searchDepth: 20, maxMovetimeMs: 2200},
+        {id: 10, levelName: "Cấp 10 - Siêu AI Thần Thoại (Elo 2800+)", uciSkillLevel: 20, searchDepth: 26, maxMovetimeMs: 3500}
     ], 
     human: [
-        {id: 1, uciSkillLevel: 20, searchDepth: 5, maxMovetimeMs: 500, multiPVCount: 4, pvProbabilities: [0.10, 0.20, 0.30, 0.40], maxCentipawnDrop: 400, minFakeThinkTime: 0.6, maxFakeThinkTime: 0.8},
-        {id: 2, uciSkillLevel: 20, searchDepth: 10, maxMovetimeMs: 700, multiPVCount: 4, pvProbabilities: [0.25, 0.25, 0.25, 0.25], maxCentipawnDrop: 250, minFakeThinkTime: 0.8, maxFakeThinkTime: 1.0},
-        {id: 3, uciSkillLevel: 20, searchDepth: 15, maxMovetimeMs: 800, multiPVCount: 3, pvProbabilities: [0.40, 0.30, 0.30], maxCentipawnDrop: 150, minFakeThinkTime: 0.9, maxFakeThinkTime: 1.1},
-        {id: 4, uciSkillLevel: 20, searchDepth: 15, maxMovetimeMs: 1000, multiPVCount: 3, pvProbabilities: [0.40, 0.35, 0.25], maxCentipawnDrop: 100, minFakeThinkTime: 1.1, maxFakeThinkTime: 1.3},
-        {id: 5, uciSkillLevel: 20, searchDepth: 15, maxMovetimeMs: 1000, multiPVCount: 3, pvProbabilities: [0.55, 0.3, 0.15], maxCentipawnDrop: 80, minFakeThinkTime: 1.1, maxFakeThinkTime: 1.3},
-        {id: 6, uciSkillLevel: 20, searchDepth: 16, maxMovetimeMs: 1200, multiPVCount: 2, pvProbabilities: [0.65, 0.35], maxCentipawnDrop: 60, minFakeThinkTime: 1.3, maxFakeThinkTime: 1.5},
-        {id: 7, uciSkillLevel: 20, searchDepth: 17, maxMovetimeMs: 1500, multiPVCount: 2, pvProbabilities: [0.75, 0.25], maxCentipawnDrop: 40, minFakeThinkTime: 1.6, maxFakeThinkTime: 1.8},
-        {id: 8, uciSkillLevel: 20, searchDepth: 18, maxMovetimeMs: 1500, multiPVCount: 2, pvProbabilities: [0.85, 0.15], maxCentipawnDrop: 20, minFakeThinkTime: 1.6, maxFakeThinkTime: 1.8},
-        {id: 9, uciSkillLevel: 20, searchDepth: 19, maxMovetimeMs: 2000, multiPVCount: 1, pvProbabilities: [1.0], maxCentipawnDrop: 0, minFakeThinkTime: 2.1, maxFakeThinkTime: 2.3},
-        {id: 10, uciSkillLevel: 20, searchDepth: 25, maxMovetimeMs: 2500, multiPVCount: 1, pvProbabilities: [1.0], maxCentipawnDrop: 0, minFakeThinkTime: 2.6, maxFakeThinkTime: 2.8}
+        {id: 1, levelName: "Cấp 1 - Tập sự (Elo 800)", searchDepth: 4, maxMovetimeMs: 400, multiPVCount: 5, pvProbabilities: [0.05, 0.15, 0.25, 0.25, 0.30], maxCentipawnDrop: 500, minFakeThinkTime: 0.5, maxFakeThinkTime: 0.8},
+        {id: 2, levelName: "Cấp 2 - Nhập môn (Elo 1000)", searchDepth: 6, maxMovetimeMs: 500, multiPVCount: 4, pvProbabilities: [0.15, 0.25, 0.30, 0.30], maxCentipawnDrop: 350, minFakeThinkTime: 0.6, maxFakeThinkTime: 0.9},
+        {id: 3, levelName: "Cấp 3 - Nghiệp dư (Elo 1200)", searchDepth: 8, maxMovetimeMs: 650, multiPVCount: 4, pvProbabilities: [0.25, 0.30, 0.25, 0.20], maxCentipawnDrop: 220, minFakeThinkTime: 0.7, maxFakeThinkTime: 1.0},
+        {id: 4, levelName: "Cấp 4 - Phong trào (Elo 1400)", searchDepth: 10, maxMovetimeMs: 800, multiPVCount: 3, pvProbabilities: [0.40, 0.35, 0.25], maxCentipawnDrop: 140, minFakeThinkTime: 0.9, maxFakeThinkTime: 1.2},
+        {id: 5, levelName: "Cấp 5 - Bán chuyên (Elo 1600)", searchDepth: 12, maxMovetimeMs: 950, multiPVCount: 3, pvProbabilities: [0.55, 0.30, 0.15], maxCentipawnDrop: 90, minFakeThinkTime: 1.0, maxFakeThinkTime: 1.3},
+        {id: 6, levelName: "Cấp 6 - Kiện tướng Huyện (Elo 1800)", searchDepth: 14, maxMovetimeMs: 1100, multiPVCount: 3, pvProbabilities: [0.68, 0.22, 0.10], maxCentipawnDrop: 60, minFakeThinkTime: 1.2, maxFakeThinkTime: 1.5},
+        {id: 7, levelName: "Cấp 7 - Kiện tướng Tỉnh (Elo 2000)", searchDepth: 16, maxMovetimeMs: 1300, multiPVCount: 2, pvProbabilities: [0.78, 0.22], maxCentipawnDrop: 40, minFakeThinkTime: 1.4, maxFakeThinkTime: 1.7},
+        {id: 8, levelName: "Cấp 8 - Dự bị Quốc Gia (Elo 2200)", searchDepth: 18, maxMovetimeMs: 1600, multiPVCount: 2, pvProbabilities: [0.88, 0.12], maxCentipawnDrop: 20, minFakeThinkTime: 1.6, maxFakeThinkTime: 1.9},
+        {id: 9, levelName: "Cấp 9 - Đại Kiện Tướng (Elo 2500)", searchDepth: 20, maxMovetimeMs: 2000, multiPVCount: 1, pvProbabilities: [1.0], maxCentipawnDrop: 0, minFakeThinkTime: 2.0, maxFakeThinkTime: 2.3},
+        {id: 10, levelName: "Cấp 10 - Siêu AI Thần Thoại (Elo 2800+)", searchDepth: 26, maxMovetimeMs: 2800, multiPVCount: 1, pvProbabilities: [1.0], maxCentipawnDrop: 0, minFakeThinkTime: 2.3, maxFakeThinkTime: 2.7}
     ] 
 };
 
@@ -316,6 +316,7 @@ export async function initPikafish(forceType = null) {
 
 function onEngineReady(type) {
     state.engineModule.sendCommand("uci");
+    state.engineModule.sendCommand("setoption name UCI_ShowWDL value true");
     state.engineModule.sendCommand("isready");
     
     const overlay = document.getElementById('loading-overlay');
@@ -735,6 +736,7 @@ export function handleEngineOutput(text) {
         const timeMatch = text.match(/time (\d+)/);
         const npsMatch = text.match(/nps (\d+)/);
         const multipvMatch = text.match(/multipv (\d+)/);
+        const wdlMatch = text.match(/wdl (\d+) (\d+) (\d+)/);
         
         const pvIdx = text.indexOf(" pv ");
         let pvMoves = [];
@@ -747,6 +749,27 @@ export function handleEngineOutput(text) {
         let isRedTurn = state.currentNode.fen.split(" ")[1] === "w";
         let turnPrefix = isRedTurn ? "Điểm Đỏ: " : "Điểm Đen: "; 
         let scoreText = "0"; let finalScoreForBar = 0; let relativeScore = 0;    
+        let winPct = 33.3, drawPct = 33.4, lossPct = 33.3;
+
+        if (wdlMatch) {
+            const w = parseInt(wdlMatch[1], 10);
+            const d = parseInt(wdlMatch[2], 10);
+            const l = parseInt(wdlMatch[3], 10);
+            const total = w + d + l || 1000;
+            const wVal = Math.round((w / total) * 1000) / 10;
+            const dVal = Math.round((d / total) * 1000) / 10;
+            const lVal = Math.round((l / total) * 1000) / 10;
+            
+            if (isRedTurn) {
+                winPct = wVal;
+                drawPct = dVal;
+                lossPct = lVal;
+            } else {
+                winPct = lVal;
+                drawPct = dVal;
+                lossPct = wVal;
+            }
+        }
 
         if (scoreCpMatch) {
             let cp = parseInt(scoreCpMatch[1]); relativeScore = cp; 
@@ -760,6 +783,13 @@ export function handleEngineOutput(text) {
                 if (scoreBarFill) scoreBarFill.style.width = `${winRate}%`;
                 const scoreTextEl = document.getElementById("score-text");
                 if (scoreTextEl) scoreTextEl.innerText = turnPrefix + scoreText;
+
+                if (!wdlMatch) {
+                    const winProb = 1 / (1 + Math.exp(-finalScoreForBar / 280));
+                    winPct = Math.round(winProb * 80 * 10) / 10;
+                    lossPct = Math.round((1 - winProb) * 80 * 10) / 10;
+                    drawPct = Math.round((100 - winPct - lossPct) * 10) / 10;
+                }
 
                 if (state.currentNode && !window.isAnalyzingGameGlobal) {
                     state.currentNode.evalScore = finalScoreForBar / 100.0;
@@ -776,6 +806,23 @@ export function handleEngineOutput(text) {
                 if (scoreBarFill) scoreBarFill.style.width = isRedWin ? `100%` : `0%`;
                 const scoreTextEl = document.getElementById("score-text");
                 if (scoreTextEl) scoreTextEl.innerText = turnPrefix + scoreText;
+
+                if (isRedWin) { winPct = 100; drawPct = 0; lossPct = 0; }
+                else { winPct = 0; drawPct = 0; lossPct = 100; }
+            }
+        }
+
+        if (rank === 1) {
+            const winFill = document.getElementById("wdl-win-fill");
+            const drawFill = document.getElementById("wdl-draw-fill");
+            const lossFill = document.getElementById("wdl-loss-fill");
+            if (winFill && drawFill && lossFill) {
+                winFill.style.width = `${winPct}%`;
+                winFill.innerText = winPct >= 10 ? `Đỏ ${winPct}%` : (winPct >= 5 ? `${winPct}%` : '');
+                drawFill.style.width = `${drawPct}%`;
+                drawFill.innerText = drawPct >= 10 ? `Hòa ${drawPct}%` : (drawPct >= 5 ? `${drawPct}%` : '');
+                lossFill.style.width = `${lossPct}%`;
+                lossFill.innerText = lossPct >= 10 ? `Đen ${lossPct}%` : (lossPct >= 5 ? `${lossPct}%` : '');
             }
         }
         if (pvMoves.length > 0) {

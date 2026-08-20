@@ -4,7 +4,7 @@ import { START_FEN, defaultGameInfo } from './config.js';
 import { getWorkspace, saveWorkspace } from './db.js';
 import { openModal, showToast, renderGameList,hideAILoading } from './ui.js';
 import { renderBoardFull, clearDots, drawLastMoveDots, renderMoveHistory, clearArrow, startCanvasAnimation } from './board.js';
-import { initPikafish, triggerEngineEvaluation } from './engine.js'; // Đã xóa fetchCloudBook ở đây
+import { initPikafish, triggerEngineEvaluation, botProfiles } from './engine.js';
 import { handleEditSquareClick } from './editor.js';
 import { formatGameInfoString, mergeGameInfo, saveGameState } from './io.js';
 import { checkDraw60Moves, getStrictLegalMoves } from './rules.js';
@@ -52,9 +52,11 @@ function updateBotTitleBoard() {
     if (state.appMode === 'vsbot') {
         isBotTurn = (state.vsBotSettings.botColor === 'red' && isRedTurn) || (state.vsBotSettings.botColor === 'black' && !isRedTurn);
         titleText = "ĐẤU VS BOT";
+        const lvl = state.vsBotSettings.level || 5;
+        const profile = (botProfiles.standard && botProfiles.standard[lvl - 1]) ? botProfiles.standard[lvl - 1] : { levelName: `Level ${lvl}` };
         infoRows = `
             <div class="bot-info-row"><span>Phong cách:</span> <span class="bot-info-val">${state.vsBotSettings.botStyle === 'human' ? "Giống Người" : "Tiêu Chuẩn"}</span></div>
-            <div class="bot-info-row"><span>Độ khó:</span> <span class="bot-info-val">Level ${state.vsBotSettings.level}</span></div>
+            <div class="bot-info-row"><span>Độ khó:</span> <span class="bot-info-val" style="font-size: 11px;">${profile.levelName}</span></div>
         `;
     } else if (state.appMode === 'puzzle') {
         isBotTurn = (state.aiPlaysRed && isRedTurn) || (state.aiPlaysBlack && !isRedTurn);
@@ -568,6 +570,15 @@ export function forceStopAIPlayers() {
         const prefix = isRedTurn ? "Điểm Đỏ: " : "Điểm Đen: ";
         const elScore = document.getElementById("score-text"); if(elScore) elScore.innerText = prefix + "0";
         const elBar = document.getElementById("score-bar-fill"); if(elBar) elBar.style.width = "50%";
+        
+        const elWin = document.getElementById("wdl-win-fill");
+        const elDraw = document.getElementById("wdl-draw-fill");
+        const elLoss = document.getElementById("wdl-loss-fill");
+        if (elWin && elDraw && elLoss) {
+            elWin.style.width = "33.3%"; elWin.innerText = "Đỏ 33%";
+            elDraw.style.width = "33.4%"; elDraw.innerText = "Hòa 34%";
+            elLoss.style.width = "33.3%"; elLoss.innerText = "Đen 33%";
+        }
     }
 }
 
