@@ -3,7 +3,7 @@ import { state, storage } from './state.js';
 import { START_FEN, defaultGameInfo } from './config.js';
 import { getWorkspace, saveWorkspace } from './db.js';
 import { openModal, showToast, renderGameList,hideAILoading } from './ui.js';
-import { renderBoardFull, clearDots, drawLastMoveDots, renderMoveHistory, clearArrow, startCanvasAnimation } from './board.js';
+import { renderBoardFull, clearDots, drawLastMoveDots, renderMoveHistory, clearArrow, startCanvasAnimation, updateScoreBar } from './board.js';
 import { initPikafish, triggerEngineEvaluation, botProfiles } from './engine.js';
 import { handleEditSquareClick } from './editor.js';
 import { formatGameInfoString, mergeGameInfo, saveGameState } from './io.js';
@@ -566,19 +566,7 @@ export function forceStopAIPlayers() {
     
     state.pvLines = [];
     if (!state.isAnalyzing) {
-        const isRedTurn = state.currentNode ? (state.currentNode.fen.split(" ")[1] === "w") : true;
-        const prefix = isRedTurn ? "Điểm Đỏ: " : "Điểm Đen: ";
-        const elScore = document.getElementById("score-text"); if(elScore) elScore.innerText = prefix + "0";
-        const elBar = document.getElementById("score-bar-fill"); if(elBar) elBar.style.width = "50%";
-        
-        const elWin = document.getElementById("wdl-win-fill");
-        const elDraw = document.getElementById("wdl-draw-fill");
-        const elLoss = document.getElementById("wdl-loss-fill");
-        if (elWin && elDraw && elLoss) {
-            elWin.style.width = "33.3%"; elWin.innerText = "Đỏ 33%";
-            elDraw.style.width = "33.4%"; elDraw.innerText = "Hòa 34%";
-            elLoss.style.width = "33.3%"; elLoss.innerText = "Đen 33%";
-        }
+        updateScoreBar(state.currentNode);
     }
 }
 

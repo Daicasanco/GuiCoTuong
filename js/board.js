@@ -560,6 +560,29 @@ export function updateScoreBar(node = state.currentNode) {
     const prefix = isFlipped ? "Đen: " : "Đỏ: ";
     const formattedScore = (playerPerspectiveScore > 0 ? "+" : "") + playerPerspectiveScore.toFixed(2);
     scoreTextEl.innerText = `Điểm ${prefix}${formattedScore}`;
+
+    const winFill = document.getElementById("wdl-win-fill");
+    const drawFill = document.getElementById("wdl-draw-fill");
+    const lossFill = document.getElementById("wdl-loss-fill");
+    if (winFill && drawFill && lossFill) {
+        const cp = absRedScore * 100;
+        const redWinProb = 1 / (1 + Math.exp(-cp / 200));
+        const blackWinProb = 1 - redWinProb;
+        const absCp = Math.abs(cp);
+        const drawProb = Math.max(0, 0.30 - absCp * 0.0004);
+        const remainForWinLoss = 1 - drawProb;
+        let winPct = Math.round(redWinProb * remainForWinLoss * 1000) / 10;
+        let lossPct = Math.round(blackWinProb * remainForWinLoss * 1000) / 10;
+        let drawPct = Math.round((100 - winPct - lossPct) * 10) / 10;
+        if (drawPct < 0) drawPct = 0;
+
+        winFill.style.width = `${winPct}%`;
+        winFill.innerText = winPct >= 10 ? `Đỏ ${winPct}%` : (winPct >= 5 ? `${winPct}%` : '');
+        drawFill.style.width = `${drawPct}%`;
+        drawFill.innerText = drawPct >= 10 ? `Hòa ${drawPct}%` : (drawPct >= 5 ? `${drawPct}%` : '');
+        lossFill.style.width = `${lossPct}%`;
+        lossFill.innerText = lossPct >= 10 ? `Đen ${lossPct}%` : (lossPct >= 5 ? `${lossPct}%` : '');
+    }
 }
 
 export function renderMoveHistory() {
