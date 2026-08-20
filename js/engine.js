@@ -619,7 +619,12 @@ function triggerEngineOnly() {
     state.engineModule.sendCommand(`position fen ${state.currentNode.fen}`);
     
     const isRedTurn = state.currentNode.fen.split(" ")[1] === "w";
-    const willAIPlay = (isRedTurn && state.aiPlaysRed) || (!isRedTurn && state.aiPlaysBlack);
+    let willAIPlay = false;
+    if (state.appMode === 'vsbot') {
+        willAIPlay = (state.vsBotSettings.botColor === 'red' && isRedTurn) || (state.vsBotSettings.botColor === 'black' && !isRedTurn);
+    } else {
+        willAIPlay = (isRedTurn && state.aiPlaysRed) || (!isRedTurn && state.aiPlaysBlack);
+    }
 
     if (state.appMode === 'vsbot' && willAIPlay) {
         const style = state.vsBotSettings.botStyle;
@@ -896,7 +901,12 @@ export function handleEngineOutput(text) {
         }
 
         const isRedTurn = state.currentNode.fen.split(" ")[1] === "w";
-        const isAITurn = (isRedTurn && state.aiPlaysRed) || (!isRedTurn && state.aiPlaysBlack);
+        let isAITurn = false;
+        if (state.appMode === 'vsbot') {
+            isAITurn = (state.vsBotSettings.botColor === 'red' && isRedTurn) || (state.vsBotSettings.botColor === 'black' && !isRedTurn);
+        } else {
+            isAITurn = (isRedTurn && state.aiPlaysRed) || (!isRedTurn && state.aiPlaysBlack);
+        }
 
         if (isAITurn) {
             if (state.appMode === 'vsbot' && state.vsBotSettings.botStyle === 'human') {

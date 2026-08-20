@@ -1100,8 +1100,10 @@ export function initEvents() {
             state.isAnalyzing = !state.isAnalyzing;
             if (state.isAnalyzing) {
                 btnAnalyze.classList.add('tool-active');
-                state.aiPlaysRed = false; if(btnRed) btnRed.classList.remove('tool-active');
-                state.aiPlaysBlack = false; if(btnBlack) btnBlack.classList.remove('tool-active');
+                if (state.appMode !== 'vsbot' && state.appMode !== 'puzzle') {
+                    state.aiPlaysRed = false; if(btnRed) btnRed.classList.remove('tool-active');
+                    state.aiPlaysBlack = false; if(btnBlack) btnBlack.classList.remove('tool-active');
+                }
                 
                 if (!state.hasAutoSwitchedToAnalyze) {
                     const pikaTab = document.querySelector('.ai-tab-btn[data-tab="pikafish"]');
