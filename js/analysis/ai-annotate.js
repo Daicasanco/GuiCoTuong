@@ -1,27 +1,36 @@
 // js/analysis/ai-annotate.js
 import { state, storage } from '../state.js';
-import { getMainLine, customTranslator } from '../game.js';
+import { customTranslator, ensureNodeData } from '../game.js';
 import { showToast, showLoading, hideLoading, openModal } from '../ui.js';
 import { renderMoveHistory, renderBoardFull } from '../board.js';
 import { saveGameState } from '../io.js';
-import { runAutoGameReview } from './auto-review.js';
+import { runAutoGameReview, getAllTreeNodes } from './auto-review.js';
 
 let isAnnotating = false;
 
 /**
- * Thu thập danh sách nước đi kèm đánh giá engine và biến phụ
+ * Thu thập danh sách TẤT CẢ các nước đi trong cây cờ (bao gồm tất cả các biến/nhánh CBL)
  */
 export function collectMovesDataForAI() {
-    const mainLine = getMainLine();
-    if (mainLine.length <= 1) return [];
+    if (!state.rootNode) return { allNodes: [], movesData: [] };
+    const allNodes = getAllTreeNodes(state.rootNode);
+    if (allNodes.length <= 1) return { allNodes: [], movesData: [] };
 
     const movesData = [];
-    for (let i = 1; i < mainLine.length; i++) {
-        const node = mainLine[i];
-        const prevNode = mainLine[i - 1];
-        const isRedMove = (node.fen.split(' ')[1] === 'b'); // Sau khi Đỏ đi thì tới lượt Đen ('b')
+    let counter = 1;
 
-        let notation = node.notation || node.moveCommand || `Nước ${i}`;
+    for (let i = 1; i < allNodes.length; i++) {
+        const node = allNodes[i];
+        const prevNode = node.parent;
+        node._aiIndex = counter++;
+
+        try {
+            ensureNodeData(node);
+        } catch(e) {}
+
+        const isRedMove = (node.fen && node.fen.split(' ')[1] === 'b'); // Sau khi Đỏ đi thì tới lượt Đen ('b')
+
+        let notation = node.notation || node.moveCommand || `Nước ${node._aiIndex}`;
         if (!node.notation && node.moveCommand && prevNode && prevNode.fen) {
             try {
                 const trans = customTranslator(node.moveCommand, prevNode.fen);
@@ -46,45 +55,25 @@ export function collectMovesDataForAI() {
             if (calculatedDrop > 0) drop = calculatedDrop;
         }
 
-        // Thu thập các biến phụ tại vị trí trước nước đi này
-        const variations = [];
-        if (prevNode && prevNode.children && prevNode.children.length > 1) {
-            for (let v = 0; v < prevNode.children.length; v++) {
-                const child = prevNode.children[v];
-                if (child === node) continue; // Biến chính
-                let vNotation = child.notation || child.moveCommand;
-                if (!child.notation && child.moveCommand && prevNode.fen) {
-                    try {
-                        const trans = customTranslator(child.moveCommand, prevNode.fen);
-                        if (trans) vNotation = trans;
-                    } catch (e) {}
-                }
-                variations.push({
-                    move: child.moveCommand,
-                    notation: vNotation,
-                    evalScore: child.evalScore !== undefined ? child.evalScore : null
-                });
-            }
-        }
-
         movesData.push({
-            index: i,
+            i: node._aiIndex,
             move: node.moveCommand,
             notation: notation,
+            branch: node._branchLabel || 'Nhánh chính',
             side: isRedMove ? 'Đỏ' : 'Đen',
+            round: node.roundNum || 1,
             evalScore: node.evalScore !== undefined ? node.evalScore : null,
             moveFlag: node.moveFlag || null,
             bestMove: bestNotation || null,
-            drop: drop,
-            variations: variations
+            drop: drop
         });
     }
 
-    return movesData;
+    return { allNodes, movesData };
 }
 
 /**
- * Chạy quy trình phân tích và tạo ghi chú bằng Gemini AI
+ * Chạy quy trình phân tích và tạo ghi chú bằng Gemini AI cho TOÀN BỘ CÂY CỜ (tất cả các biến)
  */
 export async function runAIAnnotation() {
     if (isAnnotating) {
@@ -108,25 +97,30 @@ export async function runAIAnnotation() {
     }
 
     // 2. Kiểm tra ván đấu
-    const mainLine = getMainLine();
-    if (mainLine.length <= 1) {
+    if (!state.rootNode) {
         showToast("❌ Chưa có ván cờ hoặc nước đi nào để phân tích!");
         return;
     }
 
+    const { allNodes, movesData } = collectMovesDataForAI();
+    if (movesData.length === 0) {
+        showToast("❌ Chưa có nước đi nào để phân tích!");
+        return;
+    }
+
     // 3. Kiểm tra xem ván cờ đã được Pikafish phân tích chưa
-    const hasEvalData = mainLine.some(n => n.evalScore !== undefined);
+    const hasEvalData = allNodes.some(n => n.evalScore !== undefined);
     if (!hasEvalData) {
-        const confirmAutoReview = confirm("💡 Ván cờ chưa được Pikafish phân tích điểm số.\nBạn có muốn chạy 'Tự Phân Tích' trước để AI Gemini có dữ liệu chuẩn xác nhất không?");
+        const confirmAutoReview = confirm(`💡 Cây cờ (${movesData.length} nước và các biến) chưa được Pikafish phân tích điểm số Cấp 10.\nBạn có muốn chạy 'Tự Phân Tích' trước để AI Gemini có dữ liệu chuẩn xác nhất không?`);
         if (confirmAutoReview) {
             await runAutoGameReview();
         }
     }
 
-    // 4. Kiểm tra xem đã có ghi chú AI trước đó chưa (Q2: Hỏi xác nhận ghi đè)
-    const hasExistingAI = mainLine.some(n => n.comment && n.comment.includes('🤖'));
+    // 4. Kiểm tra xem đã có ghi chú AI trước đó chưa
+    const hasExistingAI = allNodes.some(n => n.comment && n.comment.includes('🤖'));
     if (hasExistingAI) {
-        const confirmOverwrite = confirm("⚠️ Ván cờ này đã có ghi chú AI từ trước.\nBạn có muốn phân tích lại và ghi đè ghi chú AI cũ không?");
+        const confirmOverwrite = confirm("⚠️ Kỳ phổ này đã có ghi chú AI từ trước.\nBạn có muốn phân tích lại và ghi đè ghi chú AI cũ không?");
         if (!confirmOverwrite) {
             return;
         }
@@ -134,16 +128,11 @@ export async function runAIAnnotation() {
 
     // 5. Thu thập dữ liệu nước đi
     isAnnotating = true;
-    showLoading("🤖 Đang chuẩn bị dữ liệu và gửi lên Gemini AI...");
+    showLoading(`🤖 Đang chuẩn bị dữ liệu cho ${movesData.length} nước đi và các nhánh biến...`);
 
     try {
-        const movesData = collectMovesDataForAI();
-        if (movesData.length === 0) {
-            throw new Error("Không có nước đi hợp lệ để phân tích.");
-        }
-
         const selectedModel = geminiSettings.model || "gemini-2.5-flash";
-        showLoading(`🤖 Đang kết nối Gemini AI (${selectedModel}) phân tích ${movesData.length} nước...`);
+        showLoading(`🤖 Đang kết nối Gemini AI (${selectedModel}) phân tích ${movesData.length} nước cờ và các biến...`);
 
         const response = await fetch('/api/gemini-annotate', {
             method: 'POST',
@@ -165,13 +154,21 @@ export async function runAIAnnotation() {
         }
 
         const annotations = result.annotations || [];
-        showLoading(`🤖 Đang gắn ghi chú vào ${annotations.length} nước đi...`);
+        showLoading(`🤖 Đang gắn ghi chú AI vào ${annotations.length} nước đi trên toàn bộ cây cờ...`);
 
-        // 6. Gắn kết quả vào game tree
+        // Tạo map để tra cứu nhanh node theo _aiIndex
+        const nodeMap = new Map();
+        for (let i = 1; i < allNodes.length; i++) {
+            if (allNodes[i]._aiIndex) {
+                nodeMap.set(allNodes[i]._aiIndex, allNodes[i]);
+            }
+        }
+
+        // 6. Gắn kết quả vào game tree cho TẤT CẢ CÁC BIẾN
         annotations.forEach(item => {
             const moveIdx = parseInt(item.i);
-            if (!isNaN(moveIdx) && moveIdx >= 1 && moveIdx < mainLine.length) {
-                const targetNode = mainLine[moveIdx];
+            const targetNode = nodeMap.get(moveIdx);
+            if (targetNode) {
                 const cleanNote = String(item.c || '').trim();
                 if (cleanNote) {
                     // Loại bỏ ghi chú AI cũ nếu có
@@ -203,7 +200,7 @@ export async function runAIAnnotation() {
 
         saveGameState();
         hideLoading();
-        showToast(`✅ Đã sinh ghi chú AI thành công cho ${annotations.length} nước! (Model: ${result.model}, Key: ${result.usedKey})`);
+        showToast(`✅ Đã sinh ghi chú AI thành công cho ${annotations.length} nước đi và các biến! (Model: ${result.model}, Key: ${result.usedKey})`);
 
     } catch (error) {
         console.error("Lỗi AI Annotation:", error);

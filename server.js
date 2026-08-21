@@ -99,52 +99,43 @@ function pickRandomKey(keys, failedKeys = new Set()) {
 function buildChessAnnotationPrompt(movesData, gameInfo) {
     const info = gameInfo || {};
     const totalMoves = movesData.length;
-    const opening = Math.min(12, Math.floor(totalMoves * 0.25));
-    const endgame = Math.max(totalMoves - 15, Math.floor(totalMoves * 0.7));
 
-    let movesBlock = 'DANH SÁCH NƯỚC ĐI (kèm đánh giá engine Pikafish):\n\n';
-    movesData.forEach((m, idx) => {
-        const moveNum = idx + 1;
-        const phase = idx < opening ? '[Khai cuộc]' : (idx > endgame ? '[Tàn cuộc]' : '[Trung cuộc]');
+    let movesBlock = 'DANH SÁCH TẤT CẢ CÁC NƯỚC ĐI VÀ CÁC BIẾN TRONG KỲ PHỔ (kèm đánh giá engine Pikafish Cấp 10):\n\n';
+    movesData.forEach((m) => {
+        const moveId = m.i || m.index;
         const flag = m.moveFlag === 'weak' ? '🔴 PHẾ CỜ / SAI LẦM NẶNG' :
                      m.moveFlag === 'inaccuracy' ? '🟠 SƠ HỞ / NƯỚC YẾU' :
                      m.moveFlag === 'strong' ? '🟢 NƯỚC CHUẨN / NƯỚC HAY' : '⚪ Bình thường';
         const bestInfo = m.bestMove ? ` | Nước chuẩn gợi ý: ${m.bestMove}` : '';
         const dropInfo = (m.drop !== null && m.drop !== undefined) ? ` | Tụt điểm: ${Number(m.drop).toFixed(2)}` : '';
         const evalStr = (m.evalScore !== undefined && m.evalScore !== null) ? `${m.evalScore >= 0 ? '+' : ''}${Number(m.evalScore).toFixed(2)}` : 'N/A';
+        const branchStr = m.branch ? `[${m.branch}]` : '[Nhánh chính]';
 
-        movesBlock += `Nước ${moveNum} ${phase}: ${m.notation || m.move} | Bên: ${m.side} | Eval: ${evalStr}${bestInfo}${dropInfo} | Đánh giá: ${flag}\n`;
-
-        if (m.variations && m.variations.length > 0) {
-            m.variations.forEach((v, vi) => {
-                const varLabel = String.fromCharCode(97 + vi);
-                movesBlock += `   └─ Biến phụ ${moveNum}${varLabel}: ${v.notation || v.move} (Eval: ${v.evalScore || 'N/A'})\n`;
-            });
-        }
+        movesBlock += `ID ${moveId} ${branchStr}: ${m.notation || m.move} | Bên: ${m.side} | Hiệp ${m.round || 1} | Eval: ${evalStr}${bestInfo}${dropInfo} | Đánh giá: ${flag}\n`;
     });
 
     return `Bạn là một Huấn luyện viên Cờ Tướng (Xiangqi) chuyên nghiệp đẳng cấp Quốc Tế Đại Sư (Grandmaster).
-Nhiệm vụ của bạn là phân tích sâu ván cờ dưới đây dựa trên dữ liệu đánh giá chính xác của AI Engine Pikafish và viết GHI CHÚ TIẾNG VIỆT súc tích, sâu sắc, chuẩn chuyên môn cho TỪNG NƯỚC ĐI.
+Nhiệm vụ của bạn là phân tích sâu toàn bộ ván cờ / cây kỳ phổ dưới đây (bao gồm cả NHÁNH CHÍNH và TẤT CẢ CÁC NHÁNH BIẾN PHỤ TRONG CBL) dựa trên dữ liệu đánh giá chính xác của AI Engine Pikafish Cấp 10 (Max depth) và viết GHI CHÚ TIẾNG VIỆT súc tích, sâu sắc, chuẩn chuyên môn cờ tướng cho TỪNG NƯỚC ĐI.
 
-THÔNG TIN VÁN ĐẤU:
+THÔNG TIN KỲ PHỔ / VÁN ĐẤU:
 - Bên Đỏ: ${info.red || info.redname || 'Đỏ'}
 - Bên Đen: ${info.black || info.blackname || 'Đen'}
-- Khai cuộc / Loại hình: ${info.open || info.title || 'Ván cờ'}
+- Khai cuộc / Tiêu đề: ${info.open || info.title || 'Kỳ phổ Cờ Tướng'}
 - Kết quả: ${info.result || '*'}
 
 ${movesBlock}
 
 NGUYÊN TẮC PHÂN TÍCH & VIẾT GHI CHÚ:
 1. Giải thích ý đồ chiến thuật, thế công thủ, ưu thế hoặc điểm yếu của nước cờ vừa đi.
-2. Với nước có cờ 🔴 PHẾ CỜ / SAI LẦM hoặc 🟠 SƠ HỞ: Chỉ rõ sai sót ở đâu, đối phương khai thác thế nào, và tại sao nước chuẩn (gợi ý) lại tối ưu hơn.
-3. Với nước có cờ 🟢 NƯỚC HAY / NƯỚC CHUẨN: Khen ngợi và giải thích tầm nhìn chiến lược (kiểm soát cột lộ, tạo đòn phối hợp, tranh tiên...).
-4. Với biến phụ (nếu có): So sánh ngắn gọn tại sao biến chính hay/dở hơn biến phụ.
+2. Với các NHÁNH BIẾN PHỤ: Nêu rõ ý nghĩa của biến (tranh tiên, tấn công cánh hay củng cố trung lộ) và so sánh ngắn gọn tính hiệu quả so với biến chính.
+3. Với nước có cờ 🔴 PHẾ CỜ / SAI LẦM hoặc 🟠 SƠ HỞ: Chỉ rõ sai sót ở đâu, đối phương khai thác thế nào, và tại sao nước chuẩn (gợi ý) lại tối ưu hơn.
+4. Với nước có cờ 🟢 NƯỚC HAY / NƯỚC CHUẨN: Khen ngợi và giải thích tầm nhìn chiến lược (kiểm soát cột lộ, tạo đòn phối hợp, tranh tiên...).
 5. Phong cách viết: Ngôn ngữ tiếng Việt chuyên nghiệp cờ tướng, tự nhiên, gãy gọn (mỗi nước 1-3 câu), không lan man sáo rỗng.
 6. Tuân thủ 100% dữ liệu engine cung cấp, không bịa đặt thế cờ trái ngược điểm đánh giá.
 
 ĐẦU RA BẮT BUỘC:
-Trả về DUY NHẤT 1 JSON ARRAY các object: [{"i": <số thứ tự nước 1..${totalMoves}>, "c": "<nội dung ghi chú tiếng Việt>"}]
-Phải đủ đúng ${totalMoves} phần tử cho tất cả các nước từ 1 đến ${totalMoves}.
+Trả về DUY NHẤT 1 JSON ARRAY các object: [{"i": <ID nước tương ứng từ 1..${totalMoves}>, "c": "<nội dung ghi chú tiếng Việt>"}]
+Phải đủ đúng ${totalMoves} phần tử cho tất cả các ID từ 1 đến ${totalMoves}.
 TUYỆT ĐỐI KHÔNG thêm chữ giải thích, markdown bên ngoài array.`;
 }
 
