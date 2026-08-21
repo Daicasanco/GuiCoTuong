@@ -161,32 +161,39 @@ app.post('/api/gemini-annotate', async (req, res) => {
         return res.status(400).json({ error: 'Không có dữ liệu nước đi để phân tích.' });
     }
 
-    const selectedModel = model || 'gemini-2.5-flash';
-    console.log(`- Model được chọn: ${selectedModel}`);
-    console.log(`- Tổng số nước đi: ${movesData.length}`);
+    const primaryModel = model || 'gemini-2.5-flash';
+    // Danh sách model dự phòng theo thứ tự ưu tiên nếu model chính bị 503 quá tải
+    const FALLBACK_MODELS = [primaryModel];
+    if (primaryModel !== 'gemini-2.5-flash') FALLBACK_MODELS.push('gemini-2.5-flash');
+    if (!FALLBACK_MODELS.includes('gemini-1.5-flash')) FALLBACK_MODELS.push('gemini-1.5-flash');
+
+    console.log(`- Model yêu cầu: ${primaryModel}`);
+    console.log(`- Tổng số nước đi trong batch: ${movesData.length}`);
     console.log(`- Số lượng API Key khả dụng: ${validKeys.length}`);
 
     const prompt = buildChessAnnotationPrompt(movesData, gameInfo);
-    const RETRY_DELAYS = [0, 2000, 5000, 10000];
+    const RETRY_DELAYS = [0, 1500, 3000, 6000];
     const failedKeys = new Set();
+    let currentModelIndex = 0;
 
     for (let attempt = 0; attempt < RETRY_DELAYS.length; attempt++) {
+        const selectedModel = FALLBACK_MODELS[Math.min(currentModelIndex, FALLBACK_MODELS.length - 1)];
+
         if (RETRY_DELAYS[attempt] > 0) {
             console.log(`⏳ Chờ ${(RETRY_DELAYS[attempt] / 1000)}s rồi thử lại lần ${attempt + 1}...`);
             await new Promise(r => setTimeout(r, RETRY_DELAYS[attempt]));
         }
 
-        const apiKey = pickRandomKey(validKeys, failedKeys);
+        // Chọn key từ pool
+        let apiKey = pickRandomKey(validKeys, failedKeys);
         if (!apiKey) {
-            console.error('❌ Tất cả các API Key trong danh sách đều đã bị lỗi/quá tải!');
-            return res.status(429).json({
-                error: `Tất cả ${validKeys.length} API Key đều bị lỗi hoặc vượt hạn mức (Rate limit/Quá tải). Hãy thử lại sau hoặc thêm key mới!`,
-                failedCount: failedKeys.size
-            });
+            // Nếu tất cả key bị đánh dấu tạm thời, reset lại danh sách để thử lại với model khác
+            failedKeys.clear();
+            apiKey = pickRandomKey(validKeys, failedKeys);
         }
 
-        const keyDisplay = `...${apiKey.slice(-6)}`;
-        console.log(`🔄 Đang gọi Gemini API với key [${keyDisplay}] (Thử lần ${attempt + 1}/${RETRY_DELAYS.length})...`);
+        const keyDisplay = apiKey ? `...${apiKey.slice(-6)}` : 'UNKNOWN';
+        console.log(`🔄 Đang gọi Gemini API [Model: ${selectedModel}] với key [${keyDisplay}] (Thử lần ${attempt + 1}/${RETRY_DELAYS.length})...`);
 
         try {
             // Sử dụng REST API chuẩn của Gemini để tương thích 100% với mọi model
@@ -214,7 +221,7 @@ app.post('/api/gemini-annotate', async (req, res) => {
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify(payload),
-                timeout: 120000 // 2 phút timeout cho batch lớn
+                timeout: 90000 // 90s timeout cho mỗi batch
             });
 
             if (!geminiRes.ok) {
@@ -271,29 +278,31 @@ app.post('/api/gemini-annotate', async (req, res) => {
         } catch (err) {
             const msg = err.message || '';
             const ml = msg.toLowerCase();
-            console.error(`⚠️ Lỗi khi gọi với key [${keyDisplay}]:`, msg);
+            console.error(`⚠️ Lỗi khi gọi [${selectedModel}] với key [${keyDisplay}]:`, msg);
 
             const isRateLimit = msg.includes('429') || msg.includes('RESOURCE_EXHAUSTED') || ml.includes('rate limit') || ml.includes('quota');
-            const isOverload = msg.includes('503') || ml.includes('unavailable') || ml.includes('overload') || ml.includes('high demand');
+            const isOverload = msg.includes('503') || ml.includes('unavailable') || ml.includes('overload') || ml.includes('high demand') || ml.includes('demand');
             const isTimeout = msg.includes('504') || ml.includes('deadline') || ml.includes('timeout') || ml.includes('timed out');
             const isInvalidKey = msg.includes('API_KEY_INVALID') || msg.includes('key not valid') || msg.includes('400');
-            const isTransient = isRateLimit || isOverload || isTimeout || isInvalidKey || ml.includes('connection');
 
-            if (isRateLimit || isOverload || isInvalidKey) {
-                failedKeys.add(apiKey); // Đánh dấu key này đã hỏng/hết quota để lần retry sau chọn key khác
+            if (isOverload) {
+                // Nếu model bị quá tải (503 High Demand), tự động chuyển sang model dự phòng ổn định hơn
+                currentModelIndex++;
+                const nextModel = FALLBACK_MODELS[Math.min(currentModelIndex, FALLBACK_MODELS.length - 1)];
+                console.log(`🔀 Model [${selectedModel}] đang quá tải. Tự động chuyển sang model dự phòng [${nextModel}]...`);
+            } else if (isRateLimit || isInvalidKey) {
+                failedKeys.add(apiKey);
                 console.log(`🚫 Đã đưa key [${keyDisplay}] vào danh sách tạm ngừng (còn ${validKeys.length - failedKeys.size} key)`);
             }
 
-            if (isTransient && attempt < RETRY_DELAYS.length - 1 && (validKeys.length - failedKeys.size > 0 || isTimeout)) {
-                continue; // Thử lại với key khác hoặc retry delay
+            if (attempt < RETRY_DELAYS.length - 1) {
+                continue; // Thử lại với model khác hoặc key khác
             }
 
-            // Nếu đã thử hết các lần hoặc lỗi không thể retry
-            if (attempt === RETRY_DELAYS.length - 1 || (validKeys.length - failedKeys.size === 0)) {
-                return res.status(500).json({
-                    error: `Lỗi Gemini (${selectedModel}): ${msg.substring(0, 300)}`
-                });
-            }
+            // Nếu đã thử hết các lần
+            return res.status(500).json({
+                error: `Lỗi Gemini (${selectedModel}): ${msg.substring(0, 300)}`
+            });
         }
     }
 

@@ -158,23 +158,43 @@ export async function runAIAnnotation() {
 
             showLoading(`🤖 Đang sinh ghi chú AI: Batch ${batchNum}/${totalBatches} (Nước ${startMove} - ${endMove}/${movesData.length})...`);
 
-            const response = await fetch('/api/gemini-annotate', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    keys: keys,
-                    model: selectedModel,
-                    movesData: batchMoves,
-                    gameInfo: state.currentGameInfo || {}
-                })
-            });
+            let result = null;
+            let lastErr = null;
 
-            const result = await response.json();
+            for (let retry = 0; retry < 3; retry++) {
+                try {
+                    if (retry > 0) {
+                        showLoading(`⏳ Đang thử lại Batch ${batchNum}/${totalBatches} (Lần ${retry + 1}/3)...`);
+                        await new Promise(r => setTimeout(r, 2000));
+                    }
 
-            if (!response.ok || !result.success) {
-                throw new Error(result.error || `Lỗi HTTP ${response.status} ở Batch ${batchNum}`);
+                    const response = await fetch('/api/gemini-annotate', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            keys: keys,
+                            model: selectedModel,
+                            movesData: batchMoves,
+                            gameInfo: state.currentGameInfo || {}
+                        })
+                    });
+
+                    result = await response.json();
+                    if (response.ok && result.success) {
+                        lastErr = null;
+                        break;
+                    } else {
+                        lastErr = new Error(result.error || `Lỗi HTTP ${response.status} ở Batch ${batchNum}`);
+                    }
+                } catch(e) {
+                    lastErr = e;
+                }
+            }
+
+            if (lastErr || !result || !result.success) {
+                throw lastErr || new Error(`Lỗi sinh ghi chú ở Batch ${batchNum}`);
             }
 
             lastUsedKey = result.usedKey || lastUsedKey;
