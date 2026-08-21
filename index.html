@@ -128,6 +128,20 @@
                         <path d="M4 22V4a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v18l-8-4z" />
                     </svg>
                 </div>
+                <div class="tool-btn-outer hide-on-edit hide-on-vsbot hide-on-blind hide-on-puzzle" id="btn-ai-annotate"
+                    title="Sinh Ghi Chú AI (Gemini)">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6"
+                        stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="icon tool-btn">
+                        <path d="M12 2a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2 2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"/>
+                        <path d="m4.93 10.93 1.41 1.41"/>
+                        <path d="M2 18h2"/>
+                        <path d="M20 18h2"/>
+                        <path d="m19.07 10.93-1.41 1.41"/>
+                        <path d="M22 22H2"/>
+                        <path d="m8 6 4-4 4 4"/>
+                        <path d="M16 18a4 4 0 0 0-8 0"/>
+                    </svg>
+                </div>
                 <div class="tool-btn-outer hide-on-edit hide-on-vsbot hide-on-blind hide-on-puzzle" id="btn-go-instant"
                     title="Đi ngay">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#000000"
@@ -313,6 +327,8 @@
                             <div style="display: flex; align-items: center; gap: 6px;">
                                 <button id="btn-auto-review-game" class="engine-toggle-btn"
                                     style="background: #2563eb; color: white; border: none; padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer; transition: all 0.2s;" title="Tự động duyệt và gắn cờ phân tích toàn bộ ván đấu">🔍 Tự Phân Tích</button>
+                                <button id="btn-ai-annotate-game" class="engine-toggle-btn"
+                                    style="background: #8b5cf6; color: white; border: none; padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer; transition: all 0.2s;" title="Dùng Gemini AI sinh ghi chú và phân tích sâu cho từng nước đi">🤖 AI Ghi Chú</button>
                                 <button id="btn-engine-toggle" class="engine-toggle-btn"
                                     style="background: #008a3e; color: white; border: none; padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer; transition: all 0.2s;">Bật
                                     Thẩm</button>
@@ -1163,6 +1179,58 @@
                         <input type="checkbox" id="toggle-sound" checked>
                         <span class="slider"></span>
                     </label>
+                </div>
+
+                <!-- NHÓM CÀI ĐẶT GEMINI AI -->
+                <div id="settings-group-gemini">
+                    <div class="settings-group-title">🤖 Trợ Lý Gemini AI (Sinh Ghi Chú)</div>
+
+                    <div class="settings-row">
+                        <div class="settings-label">
+                            <strong>Mô hình AI (Model)</strong>
+                            <span>Chọn model Gemini phù hợp tốc độ / chất lượng</span>
+                        </div>
+                        <select id="gemini-model-select"
+                            style="padding: 5px 8px; border-radius: 4px; border: 1px solid #ccc; outline: none; font-size: 13px; font-weight: bold; color: #333; background: white;">
+                            <option value="gemini-2.5-flash">Gemini 2.5 Flash (Nhanh & Ổn định)</option>
+                            <option value="gemini-3.5-flash">Gemini 3.5 Flash</option>
+                            <option value="gemini-3.5-flash-lite">Gemini 3.5 Flash Lite (Siêu nhẹ)</option>
+                            <option value="gemini-3.6-flash">Gemini 3.6 Flash</option>
+                            <option value="gemini-3.7-flash">Gemini 3.7 Flash (Mạnh mẽ & Mới nhất)</option>
+                        </select>
+                    </div>
+
+                    <div class="settings-row" style="flex-direction: column; align-items: stretch; gap: 8px;">
+                        <div class="settings-label" style="width: 100%;">
+                            <strong>Danh sách API Key Gemini</strong>
+                            <span>Hỗ trợ nhập nhiều key. Hệ thống tự động chọn ngẫu nhiên và tự chuyển key khác khi bị quá tải / Rate Limit (429). Lấy key miễn phí tại <a href="https://aistudio.google.com/apikey" target="_blank" style="color: #1a73e8; text-decoration: underline;">Google AI Studio</a>.</span>
+                        </div>
+                        
+                        <div id="gemini-keys-container" style="display: flex; flex-direction: column; gap: 8px; margin-top: 4px;">
+                            <!-- Dynamic key items -->
+                        </div>
+
+                        <div style="display: flex; gap: 8px; margin-top: 4px;">
+                            <button id="btn-add-gemini-key" class="import-btn btn-blue"
+                                style="padding: 6px 12px; font-size: 12px; display: inline-flex; align-items: center; gap: 4px; cursor: pointer;">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M12 5v14M5 12h14"/>
+                                </svg>
+                                Thêm Key Mới
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="settings-row">
+                        <div class="settings-label">
+                            <strong>Sinh ghi chú ván cờ hiện tại</strong>
+                            <span>Dùng Pikafish + Gemini phân tích và lưu ghi chú vào ván đấu</span>
+                        </div>
+                        <button id="btn-ai-annotate-settings" class="import-btn"
+                            style="background: #8b5cf6; color: white; border: none; padding: 7px 14px; font-size: 13px; font-weight: bold; border-radius: 4px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;">
+                            🤖 Sinh Ghi Chú Ngay
+                        </button>
+                    </div>
                 </div>
 
                 <div style="text-align: center; margin-top: 25px; font-size: 14px; color: #333; width: 100%;">

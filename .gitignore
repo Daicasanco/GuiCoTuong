@@ -48,3 +48,4 @@ lietke.bat
 # Optional
 *.bak
 *.tmp
+engines_backup/

@@ -11,6 +11,7 @@ import { START_FEN, VschessErrorDict } from './config.js';
 import { uploadLocalBook, deleteLocalBook, loadLocalBookFromDB } from './localbook.js';
 import { renderEvalGraph } from './analysis/eval-graph.js';
 import { runAutoGameReview } from './analysis/auto-review.js';
+import { runAIAnnotation } from './analysis/ai-annotate.js';
 
 let pendingDeletePuzKey = "";
 
@@ -905,6 +906,12 @@ export function initEvents() {
             document.getElementById('settings-group-vsbot').style.display = 'none';
         }
 
+        if (typeof renderGeminiKeysUI === 'function') renderGeminiKeysUI();
+        const gModelSelect = document.getElementById('gemini-model-select');
+        if (gModelSelect && state.geminiSettings) {
+            gModelSelect.value = state.geminiSettings.model || 'gemini-2.5-flash';
+        }
+
         openModal('settings-modal'); 
     };
 
@@ -1756,6 +1763,128 @@ export function initEvents() {
 
     const btnAutoReview = document.getElementById('btn-auto-review-game');
     if(btnAutoReview) btnAutoReview.onclick = () => runAutoGameReview();
+
+    // Nút sinh ghi chú Gemini AI trên thanh công cụ & thanh thẩm cờ
+    const btnAIAnnotate = document.getElementById('btn-ai-annotate');
+    if(btnAIAnnotate) btnAIAnnotate.onclick = () => runAIAnnotation();
+
+    const btnAIAnnotateGame = document.getElementById('btn-ai-annotate-game');
+    if(btnAIAnnotateGame) btnAIAnnotateGame.onclick = () => runAIAnnotation();
+
+    const btnAIAnnotateSettings = document.getElementById('btn-ai-annotate-settings');
+    if(btnAIAnnotateSettings) btnAIAnnotateSettings.onclick = () => runAIAnnotation();
+
+    // ==========================================
+    // CÀI ĐẶT GEMINI AI (MODEL & MULTI-KEY POOL)
+    // ==========================================
+    const geminiModelSelect = document.getElementById('gemini-model-select');
+    if (geminiModelSelect) {
+        geminiModelSelect.value = state.geminiSettings.model || 'gemini-2.5-flash';
+        geminiModelSelect.onchange = (e) => {
+            state.geminiSettings.model = e.target.value;
+            storage.saveGemini(state.geminiSettings);
+        };
+    }
+
+    function renderGeminiKeysUI() {
+        const container = document.getElementById('gemini-keys-container');
+        if (!container) return;
+        container.innerHTML = '';
+
+        if (!Array.isArray(state.geminiSettings.apiKeys)) {
+            state.geminiSettings.apiKeys = [];
+        }
+
+        const keys = state.geminiSettings.apiKeys;
+
+        if (keys.length === 0) {
+            container.innerHTML = `
+                <div style="padding: 10px; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 6px; text-align: center; color: #64748b; font-size: 12px;">
+                    Chưa có API Key nào. Hãy bấm <strong>"Thêm Key Mới"</strong> để kích hoạt tính năng Gemini AI.
+                </div>
+            `;
+            return;
+        }
+
+        keys.forEach((key, idx) => {
+            const row = document.createElement('div');
+            row.style.cssText = 'display: flex; gap: 6px; align-items: center; background: #f8fafc; padding: 6px 8px; border: 1px solid #e2e8f0; border-radius: 6px;';
+
+            // Nhãn số thứ tự
+            const badge = document.createElement('span');
+            badge.style.cssText = 'font-size: 11px; font-weight: bold; color: #475569; min-width: 28px;';
+            badge.textContent = `Key ${idx + 1}`;
+
+            // Ô nhập API key (mặc định password để bảo mật)
+            const input = document.createElement('input');
+            input.type = 'password';
+            input.className = 'gemini-key-input-field';
+            input.value = key || '';
+            input.placeholder = 'Dán API Key (AIzaSy...)';
+            input.style.cssText = 'flex: 1; padding: 5px 8px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 12px; font-family: monospace; outline: none; background: white;';
+            
+            input.oninput = (e) => {
+                state.geminiSettings.apiKeys[idx] = e.target.value.trim();
+                storage.saveGemini(state.geminiSettings);
+            };
+
+            // Nút Hiện / Ẩn Key
+            const btnToggleShow = document.createElement('button');
+            btnToggleShow.type = 'button';
+            btnToggleShow.title = 'Hiện/Ẩn Key';
+            btnToggleShow.style.cssText = 'background: white; border: 1px solid #cbd5e1; border-radius: 4px; width: 28px; height: 28px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 12px; color: #475569;';
+            btnToggleShow.textContent = '👁️';
+            btnToggleShow.onclick = () => {
+                if (input.type === 'password') {
+                    input.type = 'text';
+                    btnToggleShow.textContent = '🔒';
+                } else {
+                    input.type = 'password';
+                    btnToggleShow.textContent = '👁️';
+                }
+            };
+
+            // Nút Xóa Key
+            const btnDelete = document.createElement('button');
+            btnDelete.type = 'button';
+            btnDelete.title = 'Xóa key này';
+            btnDelete.style.cssText = 'background: #fee2e2; border: 1px solid #fca5a5; color: #b91c1c; border-radius: 4px; width: 28px; height: 28px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: bold;';
+            btnDelete.textContent = '✕';
+            btnDelete.onclick = () => {
+                state.geminiSettings.apiKeys.splice(idx, 1);
+                storage.saveGemini(state.geminiSettings);
+                renderGeminiKeysUI();
+            };
+
+            row.appendChild(badge);
+            row.appendChild(input);
+            row.appendChild(btnToggleShow);
+            row.appendChild(btnDelete);
+            container.appendChild(row);
+        });
+    }
+
+    renderGeminiKeysUI();
+
+    const btnAddKey = document.getElementById('btn-add-gemini-key');
+    if (btnAddKey) {
+        btnAddKey.onclick = () => {
+            if (!Array.isArray(state.geminiSettings.apiKeys)) {
+                state.geminiSettings.apiKeys = [];
+            }
+            state.geminiSettings.apiKeys.push('');
+            storage.saveGemini(state.geminiSettings);
+            renderGeminiKeysUI();
+
+            // Tự động focus vào ô vừa thêm
+            setTimeout(() => {
+                const inputs = document.querySelectorAll('.gemini-key-input-field');
+                if (inputs.length > 0) {
+                    inputs[inputs.length - 1].focus();
+                }
+            }, 50);
+        };
+    }
 
     const boardThemeSelect = document.getElementById('board-theme-select');
     if(boardThemeSelect) {

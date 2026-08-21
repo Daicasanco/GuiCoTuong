@@ -33,6 +33,9 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
 
+// Cho phép đọc JSON body
+app.use(express.json({ limit: '2mb' }));
+
 // ----------------------------------------------------
 // API PROXY: NHẬN ẢNH TỪ WEB VÀ BẮN LÊN XIANGQIAI.COM
 // ----------------------------------------------------
@@ -82,6 +85,226 @@ app.post('/api/pikafish-recognize', upload.single('image'), async (req, res) => 
         console.error('❌ Lỗi xử lý proxy:', error.message);
         res.status(500).json({ code: 500, msg: 'Lỗi server nội bộ: ' + error.message });
     }
+});
+
+// ----------------------------------------------------
+// KEY POOL & GEMINI API CALL LOGIC
+// ----------------------------------------------------
+function pickRandomKey(keys, failedKeys = new Set()) {
+    const available = keys.filter(k => k && typeof k === 'string' && k.trim().length > 0 && !failedKeys.has(k.trim()));
+    if (available.length === 0) return null;
+    return available[Math.floor(Math.random() * available.length)].trim();
+}
+
+function buildChessAnnotationPrompt(movesData, gameInfo) {
+    const info = gameInfo || {};
+    const totalMoves = movesData.length;
+    const opening = Math.min(12, Math.floor(totalMoves * 0.25));
+    const endgame = Math.max(totalMoves - 15, Math.floor(totalMoves * 0.7));
+
+    let movesBlock = 'DANH SÁCH NƯỚC ĐI (kèm đánh giá engine Pikafish):\n\n';
+    movesData.forEach((m, idx) => {
+        const moveNum = idx + 1;
+        const phase = idx < opening ? '[Khai cuộc]' : (idx > endgame ? '[Tàn cuộc]' : '[Trung cuộc]');
+        const flag = m.moveFlag === 'weak' ? '🔴 PHẾ CỜ / SAI LẦM NẶNG' :
+                     m.moveFlag === 'inaccuracy' ? '🟠 SƠ HỞ / NƯỚC YẾU' :
+                     m.moveFlag === 'strong' ? '🟢 NƯỚC CHUẨN / NƯỚC HAY' : '⚪ Bình thường';
+        const bestInfo = m.bestMove ? ` | Nước chuẩn gợi ý: ${m.bestMove}` : '';
+        const dropInfo = (m.drop !== null && m.drop !== undefined) ? ` | Tụt điểm: ${Number(m.drop).toFixed(2)}` : '';
+        const evalStr = (m.evalScore !== undefined && m.evalScore !== null) ? `${m.evalScore >= 0 ? '+' : ''}${Number(m.evalScore).toFixed(2)}` : 'N/A';
+
+        movesBlock += `Nước ${moveNum} ${phase}: ${m.notation || m.move} | Bên: ${m.side} | Eval: ${evalStr}${bestInfo}${dropInfo} | Đánh giá: ${flag}\n`;
+
+        if (m.variations && m.variations.length > 0) {
+            m.variations.forEach((v, vi) => {
+                const varLabel = String.fromCharCode(97 + vi);
+                movesBlock += `   └─ Biến phụ ${moveNum}${varLabel}: ${v.notation || v.move} (Eval: ${v.evalScore || 'N/A'})\n`;
+            });
+        }
+    });
+
+    return `Bạn là một Huấn luyện viên Cờ Tướng (Xiangqi) chuyên nghiệp đẳng cấp Quốc Tế Đại Sư (Grandmaster).
+Nhiệm vụ của bạn là phân tích sâu ván cờ dưới đây dựa trên dữ liệu đánh giá chính xác của AI Engine Pikafish và viết GHI CHÚ TIẾNG VIỆT súc tích, sâu sắc, chuẩn chuyên môn cho TỪNG NƯỚC ĐI.
+
+THÔNG TIN VÁN ĐẤU:
+- Bên Đỏ: ${info.red || info.redname || 'Đỏ'}
+- Bên Đen: ${info.black || info.blackname || 'Đen'}
+- Khai cuộc / Loại hình: ${info.open || info.title || 'Ván cờ'}
+- Kết quả: ${info.result || '*'}
+
+${movesBlock}
+
+NGUYÊN TẮC PHÂN TÍCH & VIẾT GHI CHÚ:
+1. Giải thích ý đồ chiến thuật, thế công thủ, ưu thế hoặc điểm yếu của nước cờ vừa đi.
+2. Với nước có cờ 🔴 PHẾ CỜ / SAI LẦM hoặc 🟠 SƠ HỞ: Chỉ rõ sai sót ở đâu, đối phương khai thác thế nào, và tại sao nước chuẩn (gợi ý) lại tối ưu hơn.
+3. Với nước có cờ 🟢 NƯỚC HAY / NƯỚC CHUẨN: Khen ngợi và giải thích tầm nhìn chiến lược (kiểm soát cột lộ, tạo đòn phối hợp, tranh tiên...).
+4. Với biến phụ (nếu có): So sánh ngắn gọn tại sao biến chính hay/dở hơn biến phụ.
+5. Phong cách viết: Ngôn ngữ tiếng Việt chuyên nghiệp cờ tướng, tự nhiên, gãy gọn (mỗi nước 1-3 câu), không lan man sáo rỗng.
+6. Tuân thủ 100% dữ liệu engine cung cấp, không bịa đặt thế cờ trái ngược điểm đánh giá.
+
+ĐẦU RA BẮT BUỘC:
+Trả về DUY NHẤT 1 JSON ARRAY các object: [{"i": <số thứ tự nước 1..${totalMoves}>, "c": "<nội dung ghi chú tiếng Việt>"}]
+Phải đủ đúng ${totalMoves} phần tử cho tất cả các nước từ 1 đến ${totalMoves}.
+TUYỆT ĐỐI KHÔNG thêm chữ giải thích, markdown bên ngoài array.`;
+}
+
+// ----------------------------------------------------
+// API PROXY: GEMINI ANNOTATE VỚI MULTI-KEY ROTATION & RETRY
+// ----------------------------------------------------
+app.post('/api/gemini-annotate', async (req, res) => {
+    console.log('\n🤖 Nhận yêu cầu sinh ghi chú AI từ người dùng...');
+    const { keys, model, movesData, gameInfo } = req.body;
+
+    if (!keys || !Array.isArray(keys) || keys.length === 0) {
+        return res.status(400).json({ error: 'Chưa cấu hình API Key Gemini! Hãy vào Cài đặt để thêm key.' });
+    }
+
+    const validKeys = keys.filter(k => k && typeof k === 'string' && k.trim().length > 0);
+    if (validKeys.length === 0) {
+        return res.status(400).json({ error: 'Danh sách API Key không hợp lệ hoặc đang trống.' });
+    }
+
+    if (!movesData || !Array.isArray(movesData) || movesData.length === 0) {
+        return res.status(400).json({ error: 'Không có dữ liệu nước đi để phân tích.' });
+    }
+
+    const selectedModel = model || 'gemini-2.5-flash';
+    console.log(`- Model được chọn: ${selectedModel}`);
+    console.log(`- Tổng số nước đi: ${movesData.length}`);
+    console.log(`- Số lượng API Key khả dụng: ${validKeys.length}`);
+
+    const prompt = buildChessAnnotationPrompt(movesData, gameInfo);
+    const RETRY_DELAYS = [0, 2000, 5000, 10000];
+    const failedKeys = new Set();
+
+    for (let attempt = 0; attempt < RETRY_DELAYS.length; attempt++) {
+        if (RETRY_DELAYS[attempt] > 0) {
+            console.log(`⏳ Chờ ${(RETRY_DELAYS[attempt] / 1000)}s rồi thử lại lần ${attempt + 1}...`);
+            await new Promise(r => setTimeout(r, RETRY_DELAYS[attempt]));
+        }
+
+        const apiKey = pickRandomKey(validKeys, failedKeys);
+        if (!apiKey) {
+            console.error('❌ Tất cả các API Key trong danh sách đều đã bị lỗi/quá tải!');
+            return res.status(429).json({
+                error: `Tất cả ${validKeys.length} API Key đều bị lỗi hoặc vượt hạn mức (Rate limit/Quá tải). Hãy thử lại sau hoặc thêm key mới!`,
+                failedCount: failedKeys.size
+            });
+        }
+
+        const keyDisplay = `...${apiKey.slice(-6)}`;
+        console.log(`🔄 Đang gọi Gemini API với key [${keyDisplay}] (Thử lần ${attempt + 1}/${RETRY_DELAYS.length})...`);
+
+        try {
+            // Sử dụng REST API chuẩn của Gemini để tương thích 100% với mọi model
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(selectedModel)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+            
+            const payload = {
+                contents: [
+                    {
+                        parts: [
+                            { text: prompt }
+                        ]
+                    }
+                ],
+                generationConfig: {
+                    temperature: 0.4,
+                    topP: 0.95,
+                    maxOutputTokens: 8192,
+                    responseMimeType: "application/json"
+                }
+            };
+
+            const geminiRes = await fetch(apiUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(payload),
+                timeout: 120000 // 2 phút timeout cho batch lớn
+            });
+
+            if (!geminiRes.ok) {
+                const errText = await geminiRes.text();
+                let errObj = {};
+                try { errObj = JSON.parse(errText); } catch(e) {}
+                const errMsg = errObj?.error?.message || errText || `HTTP ${geminiRes.status}`;
+                throw new Error(`HTTP ${geminiRes.status}: ${errMsg}`);
+            }
+
+            const data = await geminiRes.json();
+            const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+
+            if (!rawText) {
+                throw new Error('Gemini trả về phản hồi rỗng (không có candidate text)');
+            }
+
+            // Clean và parse JSON array
+            let cleanedText = rawText.trim();
+            if (cleanedText.startsWith('```')) {
+                cleanedText = cleanedText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '');
+            }
+
+            let annotations = null;
+            try {
+                annotations = JSON.parse(cleanedText);
+            } catch (jsonErr) {
+                const arrayMatch = cleanedText.match(/\[[\s\S]*\]/);
+                if (arrayMatch) {
+                    annotations = JSON.parse(arrayMatch[0]);
+                } else {
+                    throw new Error(`Không thể parse JSON từ Gemini: ${cleanedText.substring(0, 200)}`);
+                }
+            }
+
+            if (!Array.isArray(annotations)) {
+                if (annotations && typeof annotations === 'object' && Array.isArray(annotations.annotations)) {
+                    annotations = annotations.annotations;
+                } else if (annotations && typeof annotations === 'object' && Array.isArray(annotations.moves)) {
+                    annotations = annotations.moves;
+                } else {
+                    throw new Error('Dữ liệu Gemini trả về không phải là JSON array!');
+                }
+            }
+
+            console.log(`✅ Thành công! Đã sinh ghi chú cho ${annotations.length} nước đi bằng model [${selectedModel}] (Key: ${keyDisplay})`);
+            return res.json({
+                success: true,
+                annotations: annotations,
+                usedKey: keyDisplay,
+                model: selectedModel
+            });
+
+        } catch (err) {
+            const msg = err.message || '';
+            const ml = msg.toLowerCase();
+            console.error(`⚠️ Lỗi khi gọi với key [${keyDisplay}]:`, msg);
+
+            const isRateLimit = msg.includes('429') || msg.includes('RESOURCE_EXHAUSTED') || ml.includes('rate limit') || ml.includes('quota');
+            const isOverload = msg.includes('503') || ml.includes('unavailable') || ml.includes('overload') || ml.includes('high demand');
+            const isTimeout = msg.includes('504') || ml.includes('deadline') || ml.includes('timeout') || ml.includes('timed out');
+            const isInvalidKey = msg.includes('API_KEY_INVALID') || msg.includes('key not valid') || msg.includes('400');
+            const isTransient = isRateLimit || isOverload || isTimeout || isInvalidKey || ml.includes('connection');
+
+            if (isRateLimit || isOverload || isInvalidKey) {
+                failedKeys.add(apiKey); // Đánh dấu key này đã hỏng/hết quota để lần retry sau chọn key khác
+                console.log(`🚫 Đã đưa key [${keyDisplay}] vào danh sách tạm ngừng (còn ${validKeys.length - failedKeys.size} key)`);
+            }
+
+            if (isTransient && attempt < RETRY_DELAYS.length - 1 && (validKeys.length - failedKeys.size > 0 || isTimeout)) {
+                continue; // Thử lại với key khác hoặc retry delay
+            }
+
+            // Nếu đã thử hết các lần hoặc lỗi không thể retry
+            if (attempt === RETRY_DELAYS.length - 1 || (validKeys.length - failedKeys.size === 0)) {
+                return res.status(500).json({
+                    error: `Lỗi Gemini (${selectedModel}): ${msg.substring(0, 300)}`
+                });
+            }
+        }
+    }
+
+    return res.status(500).json({ error: 'Đã hết số lần thử lại nhưng không thành công.' });
 });
 
 // Bật Server

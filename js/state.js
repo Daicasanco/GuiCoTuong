@@ -9,7 +9,10 @@ export const storage = {
     getAnalysis: function() { return JSON.parse(localStorage.getItem('xiangqi_analysis')) || null; },
     
     saveVsBot: function(data) { localStorage.setItem('xiangqi_vsbot', JSON.stringify(data)); },
-    getVsBot: function() { return JSON.parse(localStorage.getItem('xiangqi_vsbot')) || null; }
+    getVsBot: function() { return JSON.parse(localStorage.getItem('xiangqi_vsbot')) || null; },
+
+    saveGemini: function(data) { localStorage.setItem('xiangqi_gemini', JSON.stringify(data)); },
+    getGemini: function() { return JSON.parse(localStorage.getItem('xiangqi_gemini')) || null; }
 };
 
 const defaultSystem = {
@@ -31,9 +34,15 @@ const defaultVsBot = {
     level: 1
 };
 
+const defaultGemini = {
+    apiKeys: [],
+    model: "gemini-2.5-flash"
+};
+
 const savedSystem = Object.assign({}, defaultSystem, storage.getSystem());
 const savedAnalysis = Object.assign({}, defaultAnalysis, storage.getAnalysis());
 const savedVsBot = Object.assign({}, defaultVsBot, storage.getVsBot());
+const savedGemini = Object.assign({}, defaultGemini, storage.getGemini());
 
 savedSystem.appMode = "analyze";
 
@@ -87,6 +96,7 @@ export const state = {
     appSettings: savedSystem,
     aiSettings: savedAnalysis,
     vsBotSettings: savedVsBot,
+    geminiSettings: savedGemini,
 
     isEditMode: false,
     selectedPalettePiece: null,

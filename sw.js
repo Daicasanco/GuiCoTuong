@@ -1,5 +1,5 @@
 // sw.js
-const CACHE_NAME = '0.9.2';
+const CACHE_NAME = '0.9.3';
 
 const urlsToCache = [
     './',
@@ -29,6 +29,10 @@ const urlsToCache = [
     './js/database/engine-cache.js',
     './js/database/book-db.js',
     './js/database/game-db.js',
+
+    './js/analysis/eval-graph.js',
+    './js/analysis/auto-review.js',
+    './js/analysis/ai-annotate.js',
 
     // FILE DỮ LIỆU DÙNG CHUNG CỦA AI
     './engines/pikafish.data',
