@@ -126,9 +126,9 @@ export async function runAIAnnotation() {
         }
     }
 
-    // 5. Chia Batch thông minh (35 nước / batch để an toàn tuyệt đối dưới ngưỡng 8,192 Output Tokens của Gemini)
+    // 5. Chia Batch thông minh (80 nước / batch tối ưu tốc độ và an toàn dưới ngưỡng 8,192 Output Tokens của Gemini)
     isAnnotating = true;
-    const BATCH_SIZE = 35;
+    const BATCH_SIZE = 80;
     const batches = [];
     for (let i = 0; i < movesData.length; i += BATCH_SIZE) {
         batches.push(movesData.slice(i, i + BATCH_SIZE));
