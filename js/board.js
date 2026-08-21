@@ -411,75 +411,7 @@ function drawAnimatingPiece() {
 function drawBestMoveArrowCanvas() {
     if (state.isAnimating || state.isEditMode || state.appMode === 'blind' || state.appMode === 'memorize' || state.appMode === 'puzzle') return;
     
-    // Nếu ở chế độ đấu Bot và KHÔNG bật Thẩm cờ thì không vẽ mũi tên
-    if (state.appMode === 'vsbot' && !state.isAnalyzing) return;
-
     if (!state.appSettings.arrows) return;
-
-    // Kiểm tra xem Động cơ AI có đang được bật hay không (Phân tích, Máy cầm Đỏ, Máy cầm Đen)
-    const isAILive = state.isAnalyzing || state.aiPlaysRed || state.aiPlaysBlack;
-
-    // Hàm helper để vẽ 1 mũi tên đa giác
-    const drawSingleArrow = (move, color, rank) => {
-        if (!move || typeof move !== 'string') return;
-        const cleanMove = move.trim().toLowerCase();
-        if (cleanMove.length < 4) return;
-
-        const fromKey = cleanMove.substring(0, 2);
-        const toKey = cleanMove.substring(2, 4);
-
-        if (vschess.i2b[fromKey] === undefined || vschess.i2b[toKey] === undefined) return;
-
-        const fXY = vschess.i2b[fromKey];
-        const tXY = vschess.i2b[toKey];
-
-        const p1 = getCanvasCoords(fXY % 9, Math.floor(fXY / 9));
-        const p2 = getCanvasCoords(tXY % 9, Math.floor(tXY / 9));
-
-        if (!p1 || !p2 || isNaN(p1.cx) || isNaN(p1.cy) || isNaN(p2.cx) || isNaN(p2.cy)) return;
-
-        // Tính toán góc xoay và khoảng cách giữa 2 điểm
-        const dx = p2.cx - p1.cx;
-        const dy = p2.cy - p1.cy;
-        const angle = Math.atan2(dy, dx);
-        const distance = Math.sqrt(dx * dx + dy * dy);
-        if (distance < 1) return;
-
-        // KÍCH THƯỚC CẤU TẠO MŨI TÊN
-        const headLength = pieceSize * 0.3;      // Chiều dài chóp mũi tên
-        const headWidth = pieceSize * 0.45;       // Chiều rộng chóp mũi tên
-        const tailStartWidth = pieceSize * 0.03; // Độ rộng phần đuôi
-        const tailEndWidth = pieceSize * 0.2;   // Độ rộng phần cổ
-
-        ctx.save();
-        ctx.translate(p1.cx, p1.cy);
-        ctx.rotate(angle);
-
-        ctx.beginPath();
-        ctx.moveTo(0, tailStartWidth / 2);                    
-        ctx.lineTo(distance - headLength, tailEndWidth / 2);  
-        ctx.lineTo(distance - headLength, headWidth / 2);     
-        ctx.lineTo(distance, 0);                              
-        ctx.lineTo(distance - headLength, -headWidth / 2);    
-        ctx.lineTo(distance - headLength, -tailEndWidth / 2); 
-        ctx.lineTo(0, -tailStartWidth / 2);                   
-        ctx.closePath();
-
-        ctx.fillStyle = color;
-        ctx.fill();       
-
-        ctx.restore(); 
-
-        const textOffset = headLength * 0.65;
-        const textX = p2.cx - Math.cos(angle) * textOffset;
-        const textY = p2.cy - Math.sin(angle) * textOffset;
-
-        ctx.fillStyle = "white"; 
-        ctx.font = `bold ${pieceSize * 0.2}px Arial`;
-        ctx.textAlign = "center"; 
-        ctx.textBaseline = "middle";
-        ctx.fillText(rank, textX, textY + 1); 
-    };
 
     // NẾU rê chuột vào một dòng PV cụ thể, vẽ chuỗi nước đi xem trước (PV Preview)
     if (state.hoveredPVLine && state.hoveredPVLine.pv) {
@@ -490,8 +422,8 @@ function drawBestMoveArrowCanvas() {
         return; // Bỏ qua vẽ các dòng PV tĩnh để tránh rối mắt
     }
 
-    // NẾU Máy AI đang phân tích -> Vẽ mũi tên AI (PV1, PV2, PV3...)
-    if (isAILive && state.pvLines && state.pvLines.length > 0) {
+    // CHỈ VẼ MŨI TÊN GỢI Ý AI KHI NGƯỜI DÙNG BẬT THẨM CỜ (isAnalyzing === true)
+    if (state.isAnalyzing && state.pvLines && state.pvLines.length > 0) {
         state.pvLines.forEach(line => {
             if (!line) return;
             // Vẽ mũi tên nước đi chính
@@ -506,10 +438,8 @@ function drawBestMoveArrowCanvas() {
         return;
     }
 
-    // NẾU AI KHÔNG CHẠY MÁY THẨM: VẼ MŨI TÊN ĐÁNH SỐ 1, 2, 3... CHO TẤT CẢ CÁC NHÁNH BIẾN HÓA!
-    if (!isAILive) {
-        if (!state.appSettings.arrows) return;
-
+    // NẾU KHÔNG BẬT THẨM: VẼ MŨI TÊN ĐÁNH SỐ 1, 2, 3... CHO TẤT CẢ CÁC NHÁNH BIẾN HÓA (NẾU CÓ TRONG KỲ PHỔ)
+    if (!state.isAnalyzing && state.appMode !== 'vsbot') {
         let varParentNode = null;
         const varModal = document.getElementById('variation-modal');
         const isVarModalOpen = varModal && (varModal.style.display === 'flex' || varModal.style.display === 'block');

@@ -1114,6 +1114,12 @@ export function initEvents() {
                 triggerEngineEvaluation(); 
             } else {
                 btnAnalyze.classList.remove('tool-active');
+                state.pvLines = [];
+                clearArrow();
+                const container = document.getElementById("multipv-list-container");
+                if (container) {
+                    container.innerHTML = '<div style="text-align: center; color: #888; margin-top: 10px;">Chưa bật chế độ phân tích</div>';
+                }
             }
             
             resetAIUI();

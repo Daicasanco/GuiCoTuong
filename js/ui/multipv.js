@@ -8,6 +8,11 @@ export function renderMultiPVList() {
     const container = document.getElementById("multipv-list-container");
     if (!container) return;
     
+    if (!state.isAnalyzing) {
+        container.innerHTML = '<div style="text-align: center; color: #888; margin-top: 10px;">Chưa bật chế độ phân tích</div>';
+        return;
+    }
+
     if (!state.pvLines || state.pvLines.length === 0) {
         container.innerHTML = '<div style="text-align: center; color: #888; margin-top: 10px;">Chưa có dữ liệu phân tích</div>';
         return;
