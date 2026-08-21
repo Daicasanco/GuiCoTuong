@@ -132,14 +132,14 @@
                     title="Sinh Ghi Chú AI (Gemini)">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6"
                         stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="icon tool-btn">
-                        <path d="M12 2a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2 2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"/>
-                        <path d="m4.93 10.93 1.41 1.41"/>
-                        <path d="M2 18h2"/>
-                        <path d="M20 18h2"/>
-                        <path d="m19.07 10.93-1.41 1.41"/>
-                        <path d="M22 22H2"/>
-                        <path d="m8 6 4-4 4 4"/>
-                        <path d="M16 18a4 4 0 0 0-8 0"/>
+                        <path d="M12 2a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2 2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z" />
+                        <path d="m4.93 10.93 1.41 1.41" />
+                        <path d="M2 18h2" />
+                        <path d="M20 18h2" />
+                        <path d="m19.07 10.93-1.41 1.41" />
+                        <path d="M22 22H2" />
+                        <path d="m8 6 4-4 4 4" />
+                        <path d="M16 18a4 4 0 0 0-8 0" />
                     </svg>
                 </div>
                 <div class="tool-btn-outer hide-on-edit hide-on-vsbot hide-on-blind hide-on-puzzle" id="btn-go-instant"
@@ -326,9 +326,12 @@
                             </div>
                             <div style="display: flex; align-items: center; gap: 6px;">
                                 <button id="btn-auto-review-game" class="engine-toggle-btn"
-                                    style="background: #2563eb; color: white; border: none; padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer; transition: all 0.2s;" title="Tự động duyệt và gắn cờ phân tích toàn bộ ván đấu">🔍 Tự Phân Tích</button>
+                                    style="background: #2563eb; color: white; border: none; padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer; transition: all 0.2s;"
+                                    title="Tự động duyệt và gắn cờ phân tích toàn bộ ván đấu">🔍 Tự Phân Tích</button>
                                 <button id="btn-ai-annotate-game" class="engine-toggle-btn"
-                                    style="background: #8b5cf6; color: white; border: none; padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer; transition: all 0.2s;" title="Dùng Gemini AI sinh ghi chú và phân tích sâu cho từng nước đi">🤖 AI Ghi Chú</button>
+                                    style="background: #8b5cf6; color: white; border: none; padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer; transition: all 0.2s;"
+                                    title="Dùng Gemini AI sinh ghi chú và phân tích sâu cho từng nước đi">🤖 AI Ghi
+                                    Chú</button>
                                 <button id="btn-engine-toggle" class="engine-toggle-btn"
                                     style="background: #008a3e; color: white; border: none; padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer; transition: all 0.2s;">Bật
                                     Thẩm</button>
@@ -351,14 +354,19 @@
                             <span id="score-text">0.00</span>
                         </div>
                         <!-- THANH TỶ LỆ THẮNG / HÒA / THUA (WDL) -->
-                        <div class="wdl-bar-wrapper" id="wdl-bar-wrapper" style="margin: 0 10px 6px 10px;" title="Tỷ lệ Thắng - Hòa - Thua (Pikafish WDL Model)">
+                        <div class="wdl-bar-wrapper" id="wdl-bar-wrapper" style="margin: 0 10px 6px 10px;"
+                            title="Tỷ lệ Thắng - Hòa - Thua (Pikafish WDL Model)">
                             <div id="wdl-win-fill" class="wdl-win" style="width: 33.3%;">Thắng 33%</div>
                             <div id="wdl-draw-fill" class="wdl-draw" style="width: 33.4%;">Hòa 34%</div>
                             <div id="wdl-loss-fill" class="wdl-loss" style="width: 33.3%;">Thua 33%</div>
                         </div>
-                        <div id="eval-graph-wrapper" style="margin: 5px 10px; height: 95px; background: #fafafa; border: 1px solid #e5e7eb; border-radius: 6px; position: relative; flex-shrink: 0; overflow: hidden;" title="Biểu đồ điểm số ván cờ (Bấm vào điểm để nhảy đến nước đi)">
-                            <button id="btn-toggle-graph" title="Thu gọn / Mở rộng đồ thị" style="position: absolute; top: 3px; right: 5px; z-index: 10; background: rgba(255,255,255,0.85); border: 1px solid #cbd5e1; border-radius: 3px; width: 20px; height: 20px; font-size: 10px; cursor: pointer; display: flex; align-items: center; justify-content: center; user-select: none;">▲</button>
-                            <canvas id="eval-graph-canvas" style="width: 100%; height: 100%; display: block; cursor: pointer;"></canvas>
+                        <div id="eval-graph-wrapper"
+                            style="margin: 5px 10px; height: 95px; background: #fafafa; border: 1px solid #e5e7eb; border-radius: 6px; position: relative; flex-shrink: 0; overflow: hidden;"
+                            title="Biểu đồ điểm số ván cờ (Bấm vào điểm để nhảy đến nước đi)">
+                            <button id="btn-toggle-graph" title="Thu gọn / Mở rộng đồ thị"
+                                style="position: absolute; top: 3px; right: 5px; z-index: 10; background: rgba(255,255,255,0.85); border: 1px solid #cbd5e1; border-radius: 3px; width: 20px; height: 20px; font-size: 10px; cursor: pointer; display: flex; align-items: center; justify-content: center; user-select: none;">▲</button>
+                            <canvas id="eval-graph-canvas"
+                                style="width: 100%; height: 100%; display: block; cursor: pointer;"></canvas>
                         </div>
 
                         <!-- Các nút tab ẩn để duy trì tương thích với JS cũ -->
@@ -375,8 +383,7 @@
 
                         <div class="ai-content" id="tab-title"
                             style="display:none !important; text-align: center; padding: 0;">
-                            <strong id="mode-title-text"
-                                style="display: none !important;">CHẾ ĐỘ PHÂN TÍCH</strong>
+                            <strong id="mode-title-text" style="display: none !important;">CHẾ ĐỘ PHÂN TÍCH</strong>
 
                             <div id="blind-turn-indicator" class="blind-only"
                                 style="display: none; margin-top: 15px; font-size: 16px; font-weight: bold; color: #555;">
@@ -399,7 +406,8 @@
                         <div class="note-card-title">
                             <span class="note-card-icon" id="note-card-icon">📝</span>
                             <span class="note-card-label" id="note-card-label">Ghi Chú Phân Tích</span>
-                            <span id="note-has-badge" class="note-badge-active" style="display: none;">💡 Có Ghi Chú</span>
+                            <span id="note-has-badge" class="note-badge-active" style="display: none;">💡 Có Ghi
+                                Chú</span>
                         </div>
                         <div class="note-card-controls">
                             <span class="flag-label">Đánh dấu:</span>
@@ -408,7 +416,8 @@
                                 <option value="strong" style="color: #008a3e; font-weight: bold;">🟢 Biến Mạnh</option>
                                 <option value="weak" style="color: #ef4444; font-weight: bold;">🔴 Biến Yếu</option>
                             </select>
-                            <button id="btn-toggle-note" title="Thu gọn / Mở rộng bảng ghi chú" class="card-toggle-btn">▲</button>
+                            <button id="btn-toggle-note" title="Thu gọn / Mở rộng bảng ghi chú"
+                                class="card-toggle-btn">▲</button>
                         </div>
                     </div>
                     <div class="note-card-body" id="note-card-body">
@@ -456,11 +465,13 @@
                                         Nhập File (.cbl...)
                                     </button>
                                     <button class="import-btn" id="btn-export-cbl-library"
-                                        style="background: #10b981; color: white; justify-content: center; font-size: 11px; padding: 6px 6px; font-weight: bold; height: 30px; display: flex; align-items: center;" title="Xuất thư viện thành tệp .cbl">
+                                        style="background: #10b981; color: white; justify-content: center; font-size: 11px; padding: 6px 6px; font-weight: bold; height: 30px; display: flex; align-items: center;"
+                                        title="Xuất thư viện thành tệp .cbl">
                                         💾 Xuất .cbl
                                     </button>
                                     <button class="import-btn" id="btn-clear-all-library"
-                                        style="background: #ef4444; color: white; justify-content: center; font-size: 11px; padding: 6px 6px; font-weight: bold; height: 30px; display: flex; align-items: center;" title="Xóa sạch toàn bộ thư viện cờ đã nạp">
+                                        style="background: #ef4444; color: white; justify-content: center; font-size: 11px; padding: 6px 6px; font-weight: bold; height: 30px; display: flex; align-items: center;"
+                                        title="Xóa sạch toàn bộ thư viện cờ đã nạp">
                                         🗑️ Xóa Hết
                                     </button>
                                     <input type="file" id="library-file-upload-input"
@@ -661,8 +672,10 @@
                 </button>
                 <input type="file" id="camera-upload" accept="image/*" capture="environment" style="display:none">
 
-                <div style="font-size: 11.5px; color: #64748b; background: #f1f5f9; padding: 6px 10px; border-radius: 6px; text-align: center; border: 1px dashed #cbd5e1;">
-                    📋 <strong>Mẹo:</strong> Nhấn <strong>Ctrl + V</strong> ở bất kỳ đâu để dán ảnh bàn cờ từ Clipboard và quét ngay!
+                <div
+                    style="font-size: 11.5px; color: #64748b; background: #f1f5f9; padding: 6px 10px; border-radius: 6px; text-align: center; border: 1px dashed #cbd5e1;">
+                    📋 <strong>Mẹo:</strong> Nhấn <strong>Ctrl + V</strong> ở bất kỳ đâu để dán ảnh bàn cờ từ Clipboard
+                    và quét ngay!
                 </div>
 
                 <textarea id="import-text" placeholder="Dán mã FEN, PGN hoặc UBB vào đây..."
@@ -705,7 +718,9 @@
 
                 <hr style="border: 0; border-top: 1px solid #eee; margin: 5px 0;">
 
-                <button class="export-btn btn-download" id="exp-cbl" style="background: #e8f5e9; border-color: #a5d6a7; color: #2e7d32; font-weight: bold;">⬇️ Tải xuống Thư viện CCBridge (.CBL)</button>
+                <button class="export-btn btn-download" id="exp-cbl"
+                    style="background: #e8f5e9; border-color: #a5d6a7; color: #2e7d32; font-weight: bold;">⬇️ Tải xuống
+                    Thư viện CCBridge (.CBL)</button>
                 <button class="export-btn btn-download" id="exp-pgn-wxf">⬇️ Tải xuống PGN (WXF)</button>
                 <button class="export-btn btn-download" id="exp-pgn-iccs">⬇️ Tải xuống PGN (ICCS)</button>
                 <button class="export-btn btn-download" id="exp-xqf">⬇️ Tải xuống XQF</button>
@@ -1203,18 +1218,23 @@
                     <div class="settings-row" style="flex-direction: column; align-items: stretch; gap: 8px;">
                         <div class="settings-label" style="width: 100%;">
                             <strong>Danh sách API Key Gemini</strong>
-                            <span>Hỗ trợ nhập nhiều key. Hệ thống tự động chọn ngẫu nhiên và tự chuyển key khác khi bị quá tải / Rate Limit (429). Lấy key miễn phí tại <a href="https://aistudio.google.com/apikey" target="_blank" style="color: #1a73e8; text-decoration: underline;">Google AI Studio</a>.</span>
+                            <span>Hỗ trợ nhập nhiều key. Hệ thống tự động chọn ngẫu nhiên và tự chuyển key khác khi bị
+                                quá tải / Rate Limit (429). Lấy key miễn phí tại <a
+                                    href="https://aistudio.google.com/apikey" target="_blank"
+                                    style="color: #1a73e8; text-decoration: underline;">Google AI Studio</a>.</span>
                         </div>
-                        
-                        <div id="gemini-keys-container" style="display: flex; flex-direction: column; gap: 8px; margin-top: 4px;">
+
+                        <div id="gemini-keys-container"
+                            style="display: flex; flex-direction: column; gap: 8px; margin-top: 4px;">
                             <!-- Dynamic key items -->
                         </div>
 
                         <div style="display: flex; gap: 8px; margin-top: 4px;">
                             <button id="btn-add-gemini-key" class="import-btn btn-blue"
                                 style="padding: 6px 12px; font-size: 12px; display: inline-flex; align-items: center; gap: 4px; cursor: pointer;">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <path d="M12 5v14M5 12h14"/>
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2">
+                                    <path d="M12 5v14M5 12h14" />
                                 </svg>
                                 Thêm Key Mới
                             </button>

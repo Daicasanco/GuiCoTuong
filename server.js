@@ -161,10 +161,16 @@ app.post('/api/gemini-annotate', async (req, res) => {
         return res.status(400).json({ error: 'Không có dữ liệu nước đi để phân tích.' });
     }
 
-    const primaryModel = model || 'gemini-2.5-flash';
-    // Danh sách model dự phòng theo thứ tự ưu tiên nếu model chính bị 503 quá tải
+    let primaryModel = model || 'gemini-2.5-flash';
+    // Chuẩn hóa tên model nếu người dùng lưu model cũ
+    if (primaryModel.includes('3.7') || primaryModel.includes('3.6') || primaryModel.includes('3.5')) {
+        primaryModel = 'gemini-2.5-flash';
+    }
+
+    // Danh sách model dự phòng theo thứ tự ưu tiên nếu model chính bị 404/503
     const FALLBACK_MODELS = [primaryModel];
-    if (primaryModel !== 'gemini-2.5-flash') FALLBACK_MODELS.push('gemini-2.5-flash');
+    if (!FALLBACK_MODELS.includes('gemini-2.5-flash')) FALLBACK_MODELS.push('gemini-2.5-flash');
+    if (!FALLBACK_MODELS.includes('gemini-2.0-flash')) FALLBACK_MODELS.push('gemini-2.0-flash');
     if (!FALLBACK_MODELS.includes('gemini-1.5-flash')) FALLBACK_MODELS.push('gemini-1.5-flash');
 
     console.log(`- Model yêu cầu: ${primaryModel}`);
@@ -282,14 +288,15 @@ app.post('/api/gemini-annotate', async (req, res) => {
 
             const isRateLimit = msg.includes('429') || msg.includes('RESOURCE_EXHAUSTED') || ml.includes('rate limit') || ml.includes('quota');
             const isOverload = msg.includes('503') || ml.includes('unavailable') || ml.includes('overload') || ml.includes('high demand') || ml.includes('demand');
+            const isModelNotFound = msg.includes('404') || ml.includes('not found') || ml.includes('is not supported') || ml.includes('not supported');
             const isTimeout = msg.includes('504') || ml.includes('deadline') || ml.includes('timeout') || ml.includes('timed out');
             const isInvalidKey = msg.includes('API_KEY_INVALID') || msg.includes('key not valid') || msg.includes('400');
 
-            if (isOverload) {
-                // Nếu model bị quá tải (503 High Demand), tự động chuyển sang model dự phòng ổn định hơn
+            if (isOverload || isModelNotFound) {
+                // Tự động chuyển sang model dự phòng
                 currentModelIndex++;
                 const nextModel = FALLBACK_MODELS[Math.min(currentModelIndex, FALLBACK_MODELS.length - 1)];
-                console.log(`🔀 Model [${selectedModel}] đang quá tải. Tự động chuyển sang model dự phòng [${nextModel}]...`);
+                console.log(`🔀 Model [${selectedModel}] không khả dụng/quá tải. Tự động chuyển sang model dự phòng [${nextModel}]...`);
             } else if (isRateLimit || isInvalidKey) {
                 failedKeys.add(apiKey);
                 console.log(`🚫 Đã đưa key [${keyDisplay}] vào danh sách tạm ngừng (còn ${validKeys.length - failedKeys.size} key)`);
