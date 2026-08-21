@@ -126,86 +126,108 @@ export async function runAIAnnotation() {
         }
     }
 
-    // 5. Thu thập dữ liệu nước đi
+    // 5. Chia Batch thông minh (35 nước / batch để an toàn tuyệt đối dưới ngưỡng 8,192 Output Tokens của Gemini)
     isAnnotating = true;
-    showLoading(`🤖 Đang chuẩn bị dữ liệu cho ${movesData.length} nước đi và các nhánh biến...`);
+    const BATCH_SIZE = 35;
+    const batches = [];
+    for (let i = 0; i < movesData.length; i += BATCH_SIZE) {
+        batches.push(movesData.slice(i, i + BATCH_SIZE));
+    }
+
+    const totalBatches = batches.length;
+    showLoading(`🤖 Chuẩn bị phân tích ${movesData.length} nước qua ${totalBatches} batch...`);
+
+    // Tạo map để tra cứu nhanh node theo _aiIndex
+    const nodeMap = new Map();
+    for (let i = 1; i < allNodes.length; i++) {
+        if (allNodes[i]._aiIndex) {
+            nodeMap.set(allNodes[i]._aiIndex, allNodes[i]);
+        }
+    }
+
+    let totalAnnotated = 0;
+    let lastUsedKey = "";
+    const selectedModel = geminiSettings.model || "gemini-2.5-flash";
 
     try {
-        const selectedModel = geminiSettings.model || "gemini-2.5-flash";
-        showLoading(`🤖 Đang kết nối Gemini AI (${selectedModel}) phân tích ${movesData.length} nước cờ và các biến...`);
+        for (let b = 0; b < totalBatches; b++) {
+            const batchMoves = batches[b];
+            const batchNum = b + 1;
+            const startMove = b * BATCH_SIZE + 1;
+            const endMove = Math.min((b + 1) * BATCH_SIZE, movesData.length);
 
-        const response = await fetch('/api/gemini-annotate', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                keys: keys,
-                model: selectedModel,
-                movesData: movesData,
-                gameInfo: state.currentGameInfo || {}
-            })
-        });
+            showLoading(`🤖 Đang sinh ghi chú AI: Batch ${batchNum}/${totalBatches} (Nước ${startMove} - ${endMove}/${movesData.length})...`);
 
-        const result = await response.json();
+            const response = await fetch('/api/gemini-annotate', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    keys: keys,
+                    model: selectedModel,
+                    movesData: batchMoves,
+                    gameInfo: state.currentGameInfo || {}
+                })
+            });
 
-        if (!response.ok || !result.success) {
-            throw new Error(result.error || `Lỗi HTTP ${response.status}`);
-        }
+            const result = await response.json();
 
-        const annotations = result.annotations || [];
-        showLoading(`🤖 Đang gắn ghi chú AI vào ${annotations.length} nước đi trên toàn bộ cây cờ...`);
-
-        // Tạo map để tra cứu nhanh node theo _aiIndex
-        const nodeMap = new Map();
-        for (let i = 1; i < allNodes.length; i++) {
-            if (allNodes[i]._aiIndex) {
-                nodeMap.set(allNodes[i]._aiIndex, allNodes[i]);
+            if (!response.ok || !result.success) {
+                throw new Error(result.error || `Lỗi HTTP ${response.status} ở Batch ${batchNum}`);
             }
-        }
 
-        // 6. Gắn kết quả vào game tree cho TẤT CẢ CÁC BIẾN
-        annotations.forEach(item => {
-            const moveIdx = parseInt(item.i);
-            const targetNode = nodeMap.get(moveIdx);
-            if (targetNode) {
-                const cleanNote = String(item.c || '').trim();
-                if (cleanNote) {
-                    // Loại bỏ ghi chú AI cũ nếu có
-                    const currentComment = (targetNode.comment || '')
-                        .replace(/^🤖 [^\n]*(\n|$)/gm, '')
-                        .trim();
+            lastUsedKey = result.usedKey || lastUsedKey;
+            const annotations = result.annotations || [];
 
-                    const newAIComment = `🤖 ${cleanNote}`;
-                    targetNode.comment = currentComment ? `${newAIComment}\n\n${currentComment}` : newAIComment;
+            // Gắn kết quả của batch vào game tree ngay lập tức
+            annotations.forEach(item => {
+                const moveIdx = parseInt(item.i);
+                const targetNode = nodeMap.get(moveIdx);
+                if (targetNode) {
+                    const cleanNote = String(item.c || '').trim();
+                    if (cleanNote) {
+                        // Loại bỏ ghi chú AI cũ nếu có
+                        const currentComment = (targetNode.comment || '')
+                            .replace(/^🤖 [^\n]*(\n|$)/gm, '')
+                            .trim();
+
+                        const newAIComment = `🤖 ${cleanNote}`;
+                        targetNode.comment = currentComment ? `${newAIComment}\n\n${currentComment}` : newAIComment;
+                        totalAnnotated++;
+                    }
+                }
+            });
+
+            // Cập nhật giao diện và lưu trạng thái sau mỗi batch
+            renderMoveHistory();
+            saveGameState();
+
+            if (state.currentNode) {
+                const moveCommentInput = document.getElementById('move-comment-input');
+                const commentBox = document.getElementById('comment-box');
+                if (moveCommentInput) moveCommentInput.value = state.currentNode.comment || "";
+                if (commentBox) commentBox.value = state.currentNode.comment || "";
+                
+                const noteBadge = document.getElementById('note-has-badge');
+                if (noteBadge) {
+                    noteBadge.style.display = (state.currentNode.comment && state.currentNode.comment.trim()) ? 'inline-block' : 'none';
                 }
             }
-        });
 
-        // 7. Cập nhật giao diện
-        renderMoveHistory();
-
-        // Cập nhật ô ghi chú hiện tại nếu đang xem
-        if (state.currentNode) {
-            const moveCommentInput = document.getElementById('move-comment-input');
-            const commentBox = document.getElementById('comment-box');
-            if (moveCommentInput) moveCommentInput.value = state.currentNode.comment || "";
-            if (commentBox) commentBox.value = state.currentNode.comment || "";
-            
-            const noteBadge = document.getElementById('note-has-badge');
-            if (noteBadge) {
-                noteBadge.style.display = (state.currentNode.comment && state.currentNode.comment.trim()) ? 'inline-block' : 'none';
+            // Khoảng nghỉ nhỏ 500ms giữa các batch để tránh dồn dập
+            if (b < totalBatches - 1) {
+                await new Promise(r => setTimeout(r, 500));
             }
         }
 
-        saveGameState();
         hideLoading();
-        showToast(`✅ Đã sinh ghi chú AI thành công cho ${annotations.length} nước đi và các biến! (Model: ${result.model}, Key: ${result.usedKey})`);
+        showToast(`✅ Đã sinh ghi chú AI thành công cho ${totalAnnotated}/${movesData.length} nước đi (${totalBatches} batch)!`);
 
     } catch (error) {
         console.error("Lỗi AI Annotation:", error);
         hideLoading();
-        showToast(`❌ Lỗi sinh ghi chú AI: ${error.message}`);
+        showToast(`❌ Lỗi sinh ghi chú AI: ${error.message}${totalAnnotated > 0 ? ` (Đã lưu thành công ${totalAnnotated} nước trước đó)` : ''}`);
     } finally {
         isAnnotating = false;
     }

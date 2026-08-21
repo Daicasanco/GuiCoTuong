@@ -99,8 +99,9 @@ function pickRandomKey(keys, failedKeys = new Set()) {
 function buildChessAnnotationPrompt(movesData, gameInfo) {
     const info = gameInfo || {};
     const totalMoves = movesData.length;
+    const idsList = movesData.map(m => m.i || m.index).join(', ');
 
-    let movesBlock = 'DANH SÁCH TẤT CẢ CÁC NƯỚC ĐI VÀ CÁC BIẾN TRONG KỲ PHỔ (kèm đánh giá engine Pikafish Cấp 10):\n\n';
+    let movesBlock = 'DANH SÁCH CÁC NƯỚC ĐI VÀ CÁC BIẾN (kèm đánh giá engine Pikafish Cấp 10):\n\n';
     movesData.forEach((m) => {
         const moveId = m.i || m.index;
         const flag = m.moveFlag === 'weak' ? '🔴 PHẾ CỜ / SAI LẦM NẶNG' :
@@ -115,7 +116,7 @@ function buildChessAnnotationPrompt(movesData, gameInfo) {
     });
 
     return `Bạn là một Huấn luyện viên Cờ Tướng (Xiangqi) chuyên nghiệp đẳng cấp Quốc Tế Đại Sư (Grandmaster).
-Nhiệm vụ của bạn là phân tích sâu toàn bộ ván cờ / cây kỳ phổ dưới đây (bao gồm cả NHÁNH CHÍNH và TẤT CẢ CÁC NHÁNH BIẾN PHỤ TRONG CBL) dựa trên dữ liệu đánh giá chính xác của AI Engine Pikafish Cấp 10 (Max depth) và viết GHI CHÚ TIẾNG VIỆT súc tích, sâu sắc, chuẩn chuyên môn cờ tướng cho TỪNG NƯỚC ĐI.
+Nhiệm vụ của bạn là phân tích sâu các nước đi cờ tướng dưới đây (thuộc một phân đoạn / nhánh biến trong kỳ phổ) dựa trên dữ liệu đánh giá chính xác của AI Engine Pikafish Cấp 10 và viết GHI CHÚ TIẾNG VIỆT súc tích, sâu sắc, chuẩn chuyên môn cờ tướng cho TỪNG NƯỚC ĐI.
 
 THÔNG TIN KỲ PHỔ / VÁN ĐẤU:
 - Bên Đỏ: ${info.red || info.redname || 'Đỏ'}
@@ -134,8 +135,9 @@ NGUYÊN TẮC PHÂN TÍCH & VIẾT GHI CHÚ:
 6. Tuân thủ 100% dữ liệu engine cung cấp, không bịa đặt thế cờ trái ngược điểm đánh giá.
 
 ĐẦU RA BẮT BUỘC:
-Trả về DUY NHẤT 1 JSON ARRAY các object: [{"i": <ID nước tương ứng từ 1..${totalMoves}>, "c": "<nội dung ghi chú tiếng Việt>"}]
-Phải đủ đúng ${totalMoves} phần tử cho tất cả các ID từ 1 đến ${totalMoves}.
+Trả về DUY NHẤT 1 JSON ARRAY các object tương ứng đúng với các ID [${idsList}]:
+[{"i": <ID số nguyên tương ứng>, "c": "<nội dung ghi chú tiếng Việt>"}]
+Phải đủ đúng ${totalMoves} phần tử cho tất cả các ID trên.
 TUYỆT ĐỐI KHÔNG thêm chữ giải thích, markdown bên ngoài array.`;
 }
 
