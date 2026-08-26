@@ -115,8 +115,8 @@ export async function runAutoGameReview() {
                 }
 
                 sendEngineCommand(`position fen ${node.fen}`);
-                // Phân tích sâu với độ sâu cấp 10 (depth 18-20 / movetime 600ms)
-                sendEngineCommand(`go depth 20 movetime 600`);
+                // Phân tích sâu Cấp 10 (depth 24 / movetime 1200ms) để đánh giá chính xác
+                sendEngineCommand(`go depth 24 movetime 1200`);
 
                 setTimeout(() => {
                     if (nodeEvalScore !== undefined) {
@@ -128,7 +128,7 @@ export async function runAutoGameReview() {
                         if (idx !== -1) engineOutputListeners.splice(idx, 1);
                     }
                     resolve();
-                }, 650);
+                }, 1500);
             });
         } catch (e) {}
     }
@@ -150,15 +150,19 @@ export async function runAutoGameReview() {
                 } catch(e) {}
             }
 
-            if (drop > 1.2) {
+            // Ngưỡng phân loại chuẩn cho cờ tướng (biến động điểm lớn hơn cờ vua):
+            // > 2.0 (200cp): Phế cờ / Blunder — mất quân hoặc sai lầm chiến lược nghiêm trọng
+            // > 0.9 (90cp): Sơ hở / Mistake — nước yếu rõ ràng, bỏ lỡ cơ hội
+            // <= 0.25 (25cp): Nước hay — gần như trùng với nước tối ưu của engine
+            if (drop > 2.0) {
                 currNode.moveFlag = 'weak'; // 🔴 Phế Cờ / Blunder
                 const oldComment = (currNode.comment || "").replace(/^🔴 Nước phế cờ.*\n?/, "").replace(/^🟠 Nước sơ hở.*\n?/, "");
                 currNode.comment = `🔴 Nước phế cờ (Tụt điểm ${drop.toFixed(2)}). Gợi ý nước tốt: ${bestNotation || ''}${oldComment ? '\n' + oldComment : ''}`;
-            } else if (drop > 0.5) {
+            } else if (drop > 0.9) {
                 currNode.moveFlag = 'inaccuracy'; // 🟠 Sơ Hở / Mistake
                 const oldComment = (currNode.comment || "").replace(/^🔴 Nước phế cờ.*\n?/, "").replace(/^🟠 Nước sơ hở.*\n?/, "");
                 currNode.comment = `🟠 Nước sơ hở (Tụt điểm ${drop.toFixed(2)}). Gợi ý nước tốt: ${bestNotation || ''}${oldComment ? '\n' + oldComment : ''}`;
-            } else if (drop <= 0.2) {
+            } else if (drop <= 0.25) {
                 currNode.moveFlag = 'strong'; // 🟢 Nước Hay / Best move
             } else {
                 delete currNode.moveFlag;
