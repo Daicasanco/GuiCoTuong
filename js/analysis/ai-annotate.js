@@ -65,7 +65,9 @@ export function collectMovesDataForAI() {
             evalScore: node.evalScore !== undefined ? node.evalScore : null,
             moveFlag: node.moveFlag || null,
             bestMove: bestNotation || null,
-            drop: drop
+            drop: drop,
+            fen: node.fen ? node.fen.split(' ').slice(0, 2).join(' ') : null,
+            prevFen: prevNode?.fen ? prevNode.fen.split(' ').slice(0, 2).join(' ') : null
         });
     }
 

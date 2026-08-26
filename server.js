@@ -101,7 +101,7 @@ function buildChessAnnotationPrompt(movesData, gameInfo) {
     const totalMoves = movesData.length;
     const idsList = movesData.map(m => m.i || m.index).join(', ');
 
-    let movesBlock = 'DANH SÁCH CÁC NƯỚC ĐI VÀ CÁC BIẾN (kèm đánh giá engine Pikafish Cấp 10):\n\n';
+    let movesBlock = 'DANH SÁCH CÁC NƯỚC ĐI VÀ CÁC BIẾN (kèm đánh giá engine Pikafish Cấp 10 và FEN thế cờ):\n\n';
     movesData.forEach((m) => {
         const moveId = m.i || m.index;
         const flag = m.moveFlag === 'weak' ? '🔴 PHẾ CỜ / SAI LẦM NẶNG' :
@@ -111,14 +111,23 @@ function buildChessAnnotationPrompt(movesData, gameInfo) {
         const dropInfo = (m.drop !== null && m.drop !== undefined) ? ` | Tụt điểm: ${Number(m.drop).toFixed(2)}` : '';
         const evalStr = (m.evalScore !== undefined && m.evalScore !== null) ? `${m.evalScore >= 0 ? '+' : ''}${Number(m.evalScore).toFixed(2)}` : 'N/A';
         const branchStr = m.branch ? `[${m.branch}]` : '[Nhánh chính]';
+        const fenBefore = m.prevFen ? ` | Thế cờ TRƯỚC: ${m.prevFen}` : '';
+        const fenAfter = m.fen ? ` | Thế cờ SAU: ${m.fen}` : '';
 
-        movesBlock += `ID ${moveId} ${branchStr}: ${m.notation || m.move} | Bên: ${m.side} | Hiệp ${m.round || 1} | Eval: ${evalStr}${bestInfo}${dropInfo} | Đánh giá: ${flag}\n`;
+        movesBlock += `ID ${moveId} ${branchStr}: ${m.notation || m.move} | Bên: ${m.side} | Hiệp ${m.round || 1} | Eval: ${evalStr}${bestInfo}${dropInfo} | Đánh giá: ${flag}${fenBefore}${fenAfter}\n`;
     });
 
-    return `Bạn là một Huấn luyện viên Cờ Tướng (Xiangqi) chuyên nghiệp đẳng cấp Quốc Tế Đại Sư (Grandmaster).
-Nhiệm vụ của bạn là phân tích sâu các nước đi cờ tướng dưới đây (thuộc một phân đoạn / nhánh biến trong kỳ phổ) dựa trên dữ liệu đánh giá chính xác của AI Engine Pikafish Cấp 10 và viết GHI CHÚ TIẾNG VIỆT súc tích, sâu sắc, chuẩn chuyên môn cờ tướng cho TỪNG NƯỚC ĐI.
+    return `Bạn là một Huấn luyện viên Cờ Tướng (Xiangqi) chuyên nghiệp đẳng cấp Quốc Tế Đại Sư (Grandmaster), chuyên gia phân tích chiến thuật và cục diện ván đấu.
 
-THÔNG TIN KỲ PHỔ / VÁN ĐẤU:
+Nhiệm vụ: Phân tích SÂU từng nước đi cờ tướng dưới đây dựa trên dữ liệu engine Pikafish Cấp 10 VÀ thế cờ FEN, viết GHI CHÚ TIẾNG VIỆT giải thích CỤ THỂ VỀ MẶT CHIẾN THUẬT cho từng nước.
+
+HƯỚNG DẪN ĐỌC FEN CỜ TƯỚNG (Xiangqi FEN):
+- Chữ HOA = quân Đỏ: R(Xe), N(Mã), B(Tượng), A(Sĩ), K(Tướng), C(Pháo), P(Tốt/Binh)
+- Chữ thường = quân Đen: r(xe), n(mã), b(tượng), a(sĩ), k(tướng), c(pháo), p(tốt/chốt)
+- Số = ô trống liên tiếp. Dòng phân cách bởi "/". Dòng đầu tiên là hàng 10 (phía Đen), dòng cuối là hàng 1 (phía Đỏ).
+- "w" = lượt Đỏ đi, "b" = lượt Đen đi.
+
+THÔNG TIN VÁN ĐẤU:
 - Bên Đỏ: ${info.red || info.redname || 'Đỏ'}
 - Bên Đen: ${info.black || info.blackname || 'Đen'}
 - Khai cuộc / Tiêu đề: ${info.open || info.title || 'Kỳ phổ Cờ Tướng'}
@@ -126,13 +135,36 @@ THÔNG TIN KỲ PHỔ / VÁN ĐẤU:
 
 ${movesBlock}
 
-NGUYÊN TẮC PHÂN TÍCH & VIẾT GHI CHÚ:
-1. Giải thích ý đồ chiến thuật, thế công thủ, ưu thế hoặc điểm yếu của nước cờ vừa đi.
-2. Với các NHÁNH BIẾN PHỤ: Nêu rõ ý nghĩa của biến (tranh tiên, tấn công cánh hay củng cố trung lộ) và so sánh ngắn gọn tính hiệu quả so với biến chính.
-3. Với nước có cờ 🔴 PHẾ CỜ / SAI LẦM hoặc 🟠 SƠ HỞ: Chỉ rõ sai sót ở đâu, đối phương khai thác thế nào, và tại sao nước chuẩn (gợi ý) lại tối ưu hơn.
-4. Với nước có cờ 🟢 NƯỚC HAY / NƯỚC CHUẨN: Khen ngợi và giải thích tầm nhìn chiến lược (kiểm soát cột lộ, tạo đòn phối hợp, tranh tiên...).
-5. Phong cách viết: Ngôn ngữ tiếng Việt chuyên nghiệp cờ tướng, tự nhiên, gãy gọn (mỗi nước 1-3 câu), không lan man sáo rỗng.
-6. Tuân thủ 100% dữ liệu engine cung cấp, không bịa đặt thế cờ trái ngược điểm đánh giá.
+NGUYÊN TẮC PHÂN TÍCH BẮT BUỘC — PHẢI GIẢI THÍCH CỤ THỂ VỀ CHIẾN THUẬT:
+
+1. **Phân tích vị trí quân cờ từ FEN**: Dùng FEN TRƯỚC và SAU nước đi để xác định chính xác quân nào ở đâu, quân nào bị ảnh hưởng bởi nước đi này.
+
+2. **Với nước 🔴 PHẾ CỜ / 🟠 SƠ HỞ — PHẢI chỉ rõ LÝ DO CỤ THỂ**, ví dụ:
+   - "Mã bị bí (kẹt ở góc/biên, không có ô nhảy vì bị quân khác chặn chân)"
+   - "Xe mất căn (mất kiểm soát cột mở, bị đẩy lùi về vị trí phòng thủ thụ động)"
+   - "Pháo mất gánh (mất quân giá đỡ để bắn, pháo trở nên vô dụng)"
+   - "Tạo lỗ hổng trong cung, sĩ tượng mất liên kết, tướng dễ bị chiếu"
+   - "Để đối phương đè quân (xe đè, pháo đè, mã đè — kiểm soát quân ta không di chuyển được)"
+   - "Mất tiên thủ (để đối phương giành quyền đi trước, mất nhịp tấn công)"
+   - "Quân bị cản đường nhau (xe bị pháo chặn, mã bị tốt cản chân)"
+   - "Bỏ lỡ đòn chiếu đôi / bắt đôi / xiên quân / ghim quân"
+   - "Không bảo vệ được quân trọng yếu, dẫn đến mất quân miễn phí"
+   Kèm theo giải thích tại sao nước chuẩn gợi ý lại tốt hơn.
+
+3. **Với nước 🟢 NƯỚC HAY — PHẢI khen cụ thể**, ví dụ:
+   - "Chiếm cột mở, xe kiểm soát trung lộ"
+   - "Mã chiếm vị trí trung tâm mạnh, kiểm soát nhiều ô quan trọng"
+   - "Tạo đòn phối hợp xe-pháo / xe-mã / pháo-mã tấn công cung đối phương"
+   - "Tranh tiên (giành quyền chủ động tấn công trước)"
+   - "Tạo thế chiếu bí không thể đỡ"
+
+4. **Với nước ⚪ Bình thường**: Giải thích ngắn gọn ý đồ (triển khai quân, phòng thủ, chuyển hướng tấn công).
+
+5. **Phong cách viết**: 
+   - Tiếng Việt cờ tướng chuyên nghiệp, tự nhiên
+   - Mỗi nước 1-3 câu, gãy gọn, KHÔNG sáo rỗng chung chung
+   - PHẢI nêu đích danh quân cờ cụ thể (ví dụ: "Xe 1 đường 2", "Mã trái", "Pháo đầu")
+   - Tuân thủ 100% dữ liệu engine, KHÔNG bịa thế cờ
 
 ĐẦU RA BẮT BUỘC:
 Trả về DUY NHẤT 1 JSON ARRAY các object tương ứng đúng với các ID [${idsList}]:
