@@ -23,7 +23,7 @@ const TO_SCALE = 1.1;             // Điểm đến nước đi trước (to.web
 export function preloadImages() {
     return new Promise((resolve) => {
         const pieceKeys = Object.keys(PIECE_MAP);
-        const extraImages = ['shadow', 'dot', 'from', 'to', 'selection', 'blind_b', 'blind_w']; // Các ảnh hiệu ứng
+        const extraImages = ['shadow', 'dot', 'from', 'to', 'selection', 'blind_b', 'blind_w', 'logo_kyly']; // Các ảnh hiệu ứng & logo sông
         
         let loadedCount = 0;
         const totalImages = pieceKeys.length + extraImages.length; 
@@ -36,12 +36,23 @@ export function preloadImages() {
             }
         };
 
-        // Tải ảnh các hiệu ứng (UI)
+        // Nạp font chữ nghệ thuật cho canvas
+        if (typeof document !== 'undefined' && document.fonts) {
+            document.fonts.load('700 24px Charm').catch(() => {});
+        }
+
+        // Tải ảnh các hiệu ứng (UI) & logo
         extraImages.forEach(imgName => {
             const img = new Image();
             img.src = `style/${imgName}.webp`;
             img.onload = () => { imageCache[imgName] = img; checkDone(); };
-            img.onerror = () => { console.error(`Lỗi tải ảnh: ${imgName}.webp`); checkDone(); };
+            img.onerror = () => {
+                // Fallback nếu không có webp
+                const fallbackImg = new Image();
+                fallbackImg.src = `style/${imgName}.png`;
+                fallbackImg.onload = () => { imageCache[imgName] = fallbackImg; checkDone(); };
+                fallbackImg.onerror = () => { console.error(`Lỗi tải ảnh: ${imgName}`); checkDone(); };
+            };
         });
 
         // Tải ảnh các quân cờ
@@ -209,6 +220,7 @@ function renderLoop() {
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+    drawRiverDecoration();       // Vẽ logo 2 bên cửa sông & chữ Kỳ Lý Cờ Tướng ở giữa
     drawLastMoveHighlights();
     drawStaticPieces();          // Vẽ các quân cờ bình thường trước
     drawAnimatingPiece();        // Vẽ quân đang bay
@@ -217,6 +229,83 @@ function renderLoop() {
     drawBestMoveArrowCanvas();   // Vẽ mũi tên AI
 
     requestAnimationFrame(renderLoop);
+}
+
+// Vẽ logo 2 bên cửa sông và chữ "Kỳ Lý Cờ Tướng" uốn lượn ở giữa khúc sông
+function drawRiverDecoration() {
+    if (!ctx || !boardRect.width) return;
+
+    const paddingX = boardRect.width * 0.07;
+    const paddingY = boardRect.height * 0.065;
+    const gridWidth = boardRect.width - (paddingX * 2);
+    const gridHeight = boardRect.height - (paddingY * 2);
+    const cellX = gridWidth / 8;
+    const cellY = gridHeight / 9;
+
+    // Tâm dòng sông nằm chính giữa hàng 4 và 5
+    const riverCenterY = paddingY + 4.5 * cellY;
+    const riverHeight = cellY;
+
+    // 1. Vẽ 2 ảnh Logo ở 2 bên cửa sông
+    const logoImg = imageCache['logo_kyly'];
+    const logoSize = Math.round(riverHeight * 0.88);
+
+    // Cửa sông bên trái (cột 0 - 1) và bên phải (cột 7 - 8)
+    const leftLogoCenterX = paddingX + 0.85 * cellX;
+    const rightLogoCenterX = paddingX + 7.15 * cellX;
+
+    if (logoImg && logoImg.complete && logoImg.naturalWidth > 0) {
+        ctx.save();
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.28)';
+        ctx.shadowBlur = 4;
+        ctx.shadowOffsetY = 2;
+
+        ctx.drawImage(
+            logoImg,
+            Math.round(leftLogoCenterX - logoSize / 2),
+            Math.round(riverCenterY - logoSize / 2),
+            logoSize,
+            logoSize
+        );
+
+        ctx.drawImage(
+            logoImg,
+            Math.round(rightLogoCenterX - logoSize / 2),
+            Math.round(riverCenterY - logoSize / 2),
+            logoSize,
+            logoSize
+        );
+        ctx.restore();
+    }
+
+    // 2. Chữ "Kỳ Lý Cờ Tướng" ở giữa khúc sông với font chữ uốn lượn
+    ctx.save();
+    const currentTheme = (state.appSettings && state.appSettings.boardTheme) || localStorage.getItem('boardTheme') || 'default';
+    const isDark = currentTheme === 'dark';
+
+    const fontSize = Math.max(14, Math.round(riverHeight * 0.44));
+    ctx.font = `700 ${fontSize}px "Charm", "Dancing Script", "Playball", cursive`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    const textCenterX = boardRect.width / 2;
+    const textCenterY = riverCenterY - 1;
+    const riverText = 'Kỳ Lý Cờ Tướng';
+
+    if (isDark) {
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.85)';
+        ctx.shadowBlur = 4;
+        ctx.shadowOffsetY = 1;
+        ctx.fillStyle = '#e8c460';
+        ctx.fillText(riverText, textCenterX, textCenterY);
+    } else {
+        ctx.shadowColor = 'rgba(255, 255, 255, 0.55)';
+        ctx.shadowBlur = 2;
+        ctx.shadowOffsetY = 1;
+        ctx.fillStyle = '#3d1c08';
+        ctx.fillText(riverText, textCenterX, textCenterY);
+    }
+    ctx.restore();
 }
 
 // Các hàm Render Phụ trợ

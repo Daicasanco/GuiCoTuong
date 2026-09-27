@@ -1,4 +1,12 @@
 /* RESET MẶC ĐỊNH */
+@font-face {
+    font-family: 'Charm';
+    font-style: normal;
+    font-weight: 700;
+    font-display: swap;
+    src: url('style/fonts/Charm-Bold.ttf') format('truetype');
+}
+
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 /* SỬA LỖI CHIỀU CAO TRÊN MOBILE (Bỏ 100vh thay bằng 100%) */

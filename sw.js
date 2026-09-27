@@ -1,5 +1,5 @@
 // sw.js
-const CACHE_NAME = '0.9.9';
+const CACHE_NAME = '0.9.9a';
 
 const urlsToCache = [
     './',
@@ -58,6 +58,7 @@ const urlsToCache = [
 
     // GIAO DIỆN VÀ ÂM THANH
     './style/board.webp', './style/shadow.webp', './style/dot.webp', './style/from.webp', './style/selection.webp', './style/to.webp',
+    './style/logo_kyly.webp', './style/fonts/Charm-Bold.ttf',
     './style/br.webp', './style/bn.webp', './style/bb.webp', './style/ba.webp', './style/bk.webp', './style/bc.webp', './style/bp.webp',
     './style/wr.webp', './style/wn.webp', './style/wb.webp', './style/wa.webp', './style/wk.webp', './style/wc.webp', './style/wp.webp',
     './style/blind_b.webp', './style/blind_w.webp',
