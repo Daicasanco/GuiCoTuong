@@ -3,7 +3,7 @@ import { state, storage } from './state.js';
 import { START_FEN, defaultGameInfo } from './config.js';
 import { getWorkspace, saveWorkspace } from './db.js';
 import { openModal, showToast, renderGameList,hideAILoading } from './ui.js';
-import { renderBoardFull, clearDots, drawLastMoveDots, renderMoveHistory, clearArrow, startCanvasAnimation, updateScoreBar } from './board.js';
+import { renderBoardFull, clearDots, drawLastMoveDots, renderMoveHistory, clearArrow, startCanvasAnimation, updateScoreBar, clearUserDrawLines } from './board.js';
 import { initPikafish, triggerEngineEvaluation, botProfiles } from './engine.js';
 import { handleEditSquareClick } from './editor.js';
 import { formatGameInfoString, mergeGameInfo, saveGameState } from './io.js';
@@ -485,6 +485,7 @@ export function handleSquareClick(x, y, iccsPos) {
                 }
             }
             
+            clearUserDrawLines();
             executeMove(moveCommand); 
             return; 
         }
@@ -823,6 +824,7 @@ export function triggerMemorizeBot() {
 }
 
 export function executeMove(moveCommand, isJump = false, isReverse = false) {
+    clearUserDrawLines();
     state.pvLines = [];
     const varContainer = document.getElementById('memo-variation-container');
     if (varContainer) varContainer.style.display = 'none';

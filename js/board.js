@@ -126,11 +126,217 @@ export function initCanvas() {
     
     setBoardTheme();
     resizeCanvas();
-    canvas.addEventListener('click', handleCanvasClick);
+
+    if (!isCanvasEventsInitialized) {
+        isCanvasEventsInitialized = true;
+        canvas.addEventListener('click', handleCanvasClick);
+        canvas.addEventListener('mousedown', handleCanvasMouseDown);
+        window.addEventListener('mousemove', handleCanvasMouseMove);
+        window.addEventListener('mouseup', handleCanvasMouseUp);
+        canvas.addEventListener('dblclick', handleCanvasDblClick);
+
+        // Hỗ trợ thiết bị cảm ứng (Touch)
+        canvas.addEventListener('touchstart', handleCanvasMouseDown, { passive: true });
+        window.addEventListener('touchmove', handleCanvasMouseMove, { passive: false });
+        window.addEventListener('touchend', handleCanvasMouseUp, { passive: true });
+    }
     
     if (!isRenderLoopRunning) {
         isRenderLoopRunning = true;
         requestAnimationFrame(renderLoop);
+    }
+}
+
+let isCanvasEventsInitialized = false;
+
+// ==========================================
+// HỆ THỐNG VẼ ĐƯỜNG KẺ CHIẾN THUẬT (USER DRAW LINES)
+// ==========================================
+export let userDrawLines = [];
+let dragStartLogic = null;
+let dragStartClient = null;
+let currentDragClient = null;
+let isDraggingLine = false;
+let dragJustFinishedTime = 0;
+
+export function clearUserDrawLines() {
+    userDrawLines = [];
+}
+
+export function getLogicCoordsFromClient(clientX, clientY) {
+    if (!canvas || !boardRect || boardRect.width === 0) return null;
+    const rect = canvas.getBoundingClientRect();
+    const percentX = (clientX - rect.left) / rect.width;
+    const percentY = (clientY - rect.top) / rect.height;
+
+    const paddingXPercent = 0.07;
+    const paddingYPercent = 0.065;
+    
+    const gridWidthPercent = 1 - (paddingXPercent * 2);
+    const gridHeightPercent = 1 - (paddingYPercent * 2);
+    
+    const cellXPercent = gridWidthPercent / 8;
+    const cellYPercent = gridHeightPercent / 9;
+
+    let logicX = Math.round((percentX - paddingXPercent) / cellXPercent);
+    let logicY = Math.round((percentY - paddingYPercent) / cellYPercent);
+
+    if (state.isBoardFlipped) {
+        logicX = 8 - logicX;
+        logicY = 9 - logicY;
+    }
+
+    if (logicX < 0 || logicX > 8 || logicY < 0 || logicY > 9) return null;
+    return { logicX, logicY };
+}
+
+function handleCanvasMouseDown(e) {
+    if (e.type === 'mousedown' && e.button !== 0) return;
+    if (e.shiftKey) return; // Nếu đang giữ Shift thì dùng để xóa đường trên click
+
+    let clientX, clientY;
+    if (e.touches && e.touches.length > 0) {
+        clientX = e.touches[0].clientX;
+        clientY = e.touches[0].clientY;
+    } else {
+        clientX = e.clientX;
+        clientY = e.clientY;
+    }
+    if (clientX === undefined || clientY === undefined) return;
+
+    const logic = getLogicCoordsFromClient(clientX, clientY);
+    if (!logic) return;
+
+    dragStartLogic = logic;
+    dragStartClient = { x: clientX, y: clientY };
+    currentDragClient = null;
+    isDraggingLine = false;
+}
+
+function handleCanvasMouseMove(e) {
+    if (!dragStartLogic || !dragStartClient) return;
+
+    let clientX, clientY;
+    if (e.touches && e.touches.length > 0) {
+        clientX = e.touches[0].clientX;
+        clientY = e.touches[0].clientY;
+    } else {
+        clientX = e.clientX;
+        clientY = e.clientY;
+    }
+    if (clientX === undefined || clientY === undefined) return;
+
+    const dist = Math.hypot(clientX - dragStartClient.x, clientY - dragStartClient.y);
+    if (dist > 8) {
+        isDraggingLine = true;
+        currentDragClient = { x: clientX, y: clientY };
+        if (e.cancelable && e.type && e.type.startsWith('touch')) {
+            e.preventDefault();
+        }
+    }
+}
+
+function handleCanvasMouseUp(e) {
+    if (isDraggingLine && dragStartLogic) {
+        let clientX, clientY;
+        if (e.changedTouches && e.changedTouches.length > 0) {
+            clientX = e.changedTouches[0].clientX;
+            clientY = e.changedTouches[0].clientY;
+        } else if (e.clientX !== undefined) {
+            clientX = e.clientX;
+            clientY = e.clientY;
+        } else if (currentDragClient) {
+            clientX = currentDragClient.x;
+            clientY = currentDragClient.y;
+        }
+
+        if (clientX !== undefined && clientY !== undefined) {
+            const endLogic = getLogicCoordsFromClient(clientX, clientY);
+            if (endLogic && (endLogic.logicX !== dragStartLogic.logicX || endLogic.logicY !== dragStartLogic.logicY)) {
+                userDrawLines.push({
+                    from: { x: dragStartLogic.logicX, y: dragStartLogic.logicY },
+                    to: { x: endLogic.logicX, y: endLogic.logicY },
+                    number: userDrawLines.length + 1
+                });
+            }
+        }
+        dragJustFinishedTime = Date.now();
+    }
+
+    dragStartLogic = null;
+    dragStartClient = null;
+    currentDragClient = null;
+    isDraggingLine = false;
+}
+
+function handleCanvasDblClick(e) {
+    // Ấn đúp chuột: xóa toàn bộ các đường kẻ trước đó
+    clearUserDrawLines();
+    state.selectedSquare = null;
+    state.legalMoves = [];
+}
+
+function distanceToLineSegment(px, py, x1, y1, x2, y2) {
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const lenSq = dx * dx + dy * dy;
+    if (lenSq === 0) return Math.hypot(px - x1, py - y1);
+    let t = ((px - x1) * dx + (py - y1) * dy) / lenSq;
+    t = Math.max(0, Math.min(1, t));
+    const projX = x1 + t * dx;
+    const projY = y1 + t * dy;
+    return Math.hypot(px - projX, py - projY);
+}
+
+function handleShiftClickDeleteLine(event) {
+    if (!userDrawLines || userDrawLines.length === 0) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const clickCanvasX = (event.clientX - rect.left) * (boardRect.width / rect.width);
+    const clickCanvasY = (event.clientY - rect.top) * (boardRect.height / rect.height);
+
+    let bestIndex = -1;
+    let minDistance = Infinity;
+    const threshold = Math.max(22, pieceSize * 0.45);
+
+    for (let i = 0; i < userDrawLines.length; i++) {
+        const item = userDrawLines[i];
+        const p1 = getCanvasCoords(item.from.x, item.from.y);
+        const p2 = getCanvasCoords(item.to.x, item.to.y);
+        if (!p1 || !p2) continue;
+
+        const distSeg = distanceToLineSegment(clickCanvasX, clickCanvasY, p1.cx, p1.cy, p2.cx, p2.cy);
+
+        const dx = p2.cx - p1.cx;
+        const dy = p2.cy - p1.cy;
+        const dist = Math.hypot(dx, dy);
+        let badgeX = (p1.cx + p2.cx) / 2;
+        let badgeY = (p1.cy + p2.cy) / 2;
+        if (dist > 1) {
+            const arrowLen = Math.min(dist * 0.4, Math.max(14, pieceSize * 0.28));
+            const badgeR = Math.max(10, pieceSize * 0.18);
+            const baseX = p2.cx - (dx / dist) * arrowLen;
+            const baseY = p2.cy - (dy / dist) * arrowLen;
+            if (dist >= badgeR * 2.5) {
+                badgeX = baseX - (dx / dist) * (badgeR * 0.4);
+                badgeY = baseY - (dy / dist) * (badgeR * 0.4);
+            }
+        }
+        const distBadge = Math.hypot(clickCanvasX - badgeX, clickCanvasY - badgeY);
+
+        const d = Math.min(distSeg, distBadge);
+        if (d <= threshold && d < minDistance) {
+            minDistance = d;
+            bestIndex = i;
+        }
+    }
+
+    if (bestIndex !== -1) {
+        userDrawLines.splice(bestIndex, 1);
+        // Đánh số lại thứ tự các đường còn lại: 1, 2, 3...
+        userDrawLines.forEach((line, idx) => {
+            line.number = idx + 1;
+        });
     }
 }
 
@@ -164,41 +370,24 @@ function resizeCanvas() {
 function handleCanvasClick(event) {
     if (!boardRect || boardRect.width === 0) return;
     
-    // Lấy khung hiển thị thực tế trên màn hình
-    const rect = canvas.getBoundingClientRect();
-    
-    // ĐÃ SỬA: Tính ra % vị trí con trỏ chuột trên thẻ Canvas (từ 0.0 đến 1.0)
-    // Việc dùng % giúp Click luôn chính xác dù CSS có scale hay zoom bao nhiêu đi nữa
-    const percentX = (event.clientX - rect.left) / rect.width;
-    const percentY = (event.clientY - rect.top) / rect.height;
+    // 1. Nếu vừa kết thúc kéo thả vẽ đường -> Không đi cờ
+    if (Date.now() - dragJustFinishedTime < 100) return;
 
-    // Tỷ lệ lề của bàn cờ Tượng Kỳ (7% chiều ngang, 6.5% chiều dọc)
-    const paddingXPercent = 0.07;
-    const paddingYPercent = 0.065;
-    
-    // Không gian lưới chứa các đường kẻ
-    const gridWidthPercent = 1 - (paddingXPercent * 2);
-    const gridHeightPercent = 1 - (paddingYPercent * 2);
-    
-    // Kích thước 1 ô cờ tính bằng %
-    const cellXPercent = gridWidthPercent / 8;
-    const cellYPercent = gridHeightPercent / 9;
-
-    // Quy đổi % ra tọa độ logic (0-8 cho X, 0-9 cho Y)
-    let logicX = Math.round((percentX - paddingXPercent) / cellXPercent);
-    let logicY = Math.round((percentY - paddingYPercent) / cellYPercent);
-
-    if (state.isBoardFlipped) {
-        logicX = 8 - logicX;
-        logicY = 9 - logicY;
+    // 2. Nếu đè Shift: xóa đường kẻ được ấn vào
+    if (event.shiftKey) {
+        handleShiftClickDeleteLine(event);
+        return;
     }
 
-    if (logicX < 0 || logicX > 8 || logicY < 0 || logicY > 9) return;
-    const boardNum = logicY * 9 + logicX;
+    // 3. Click chọn hoặc đi quân bình thường
+    const logic = getLogicCoordsFromClient(event.clientX, event.clientY);
+    if (!logic) return;
+
+    const boardNum = logic.logicY * 9 + logic.logicX;
     const iccsPos = vschess.b2i[boardNum];
 
     if (state.isEditMode) handleEditSquareClick(iccsPos);
-    else handleSquareClick(logicX, logicY, iccsPos);
+    else handleSquareClick(logic.logicX, logic.logicY, iccsPos);
 }
 
 export function getCanvasCoords(logicX, logicY) {
@@ -227,8 +416,126 @@ function renderLoop() {
     drawSelectedPiece();         // <--- VẼ QUÂN ĐANG CHỌN PHÁT SÁNG NỔI LÊN TRÊN
     drawLegalMoveDots();         // Vẽ chấm xanh nước đi
     drawBestMoveArrowCanvas();   // Vẽ mũi tên AI
+    drawUserDrawnLines();        // <--- VẼ CÁC ĐƯỜNG KẺ CHIẾN THUẬT DO NGƯỜI DÙNG KÉO THẢ
 
     requestAnimationFrame(renderLoop);
+}
+
+// Vẽ các đường kẻ chiến thuật do người dùng vẽ (có đánh số thứ tự 1, 2, 3...)
+function drawUserDrawnLines() {
+    if (!ctx || !boardRect.width) return;
+    if (userDrawLines.length === 0 && !isDraggingLine) return;
+
+    const renderArrowItem = (p1, p2, num, isPreview = false) => {
+        if (!p1 || !p2) return;
+        const dx = p2.cx - p1.cx;
+        const dy = p2.cy - p1.cy;
+        const dist = Math.hypot(dx, dy);
+        if (dist < 4) return;
+
+        const ux = dx / dist;
+        const uy = dy / dist;
+        const px = -uy;
+        const py = ux;
+
+        const arrowLen = Math.min(dist * 0.38, Math.max(14, pieceSize * 0.28));
+        const arrowW = arrowLen * 0.85;
+        const baseX = p2.cx - ux * arrowLen;
+        const baseY = p2.cy - uy * arrowLen;
+
+        const c1X = baseX + px * (arrowW / 2);
+        const c1Y = baseY + py * (arrowW / 2);
+        const c2X = baseX - px * (arrowW / 2);
+        const c2Y = baseY - py * (arrowW / 2);
+
+        ctx.save();
+        if (isPreview) {
+            ctx.globalAlpha = 0.78;
+        }
+
+        // 1. Thân đường kẻ màu xanh lá cây rực rỡ
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.lineWidth = Math.max(5, Math.round(pieceSize * 0.11));
+        ctx.strokeStyle = '#22c55e'; // Green lime vibrant
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.32)';
+        ctx.shadowBlur = 4;
+        ctx.shadowOffsetY = 1;
+
+        ctx.beginPath();
+        ctx.moveTo(p1.cx, p1.cy);
+        ctx.lineTo(baseX, baseY);
+        ctx.stroke();
+
+        // 2. Chóp mũi tên
+        ctx.fillStyle = '#22c55e';
+        ctx.beginPath();
+        ctx.moveTo(p2.cx, p2.cy);
+        ctx.lineTo(c1X, c1Y);
+        ctx.lineTo(c2X, c2Y);
+        ctx.closePath();
+        ctx.fill();
+
+        // 3. Huy hiệu tròn màu cam có số thứ tự
+        const badgeR = Math.max(10, Math.round(pieceSize * 0.18));
+        let bx, by;
+        if (dist < badgeR * 2.5) {
+            bx = (p1.cx + p2.cx) / 2;
+            by = (p1.cy + p2.cy) / 2;
+        } else {
+            bx = baseX - ux * (badgeR * 0.4);
+            by = baseY - uy * (badgeR * 0.4);
+        }
+
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.45)';
+        ctx.shadowBlur = 4;
+        ctx.shadowOffsetY = 1;
+        ctx.beginPath();
+        ctx.arc(bx, by, badgeR, 0, Math.PI * 2);
+        ctx.fillStyle = '#ff6b35'; // Coral orange
+        ctx.fill();
+
+        // Viền trắng sắc nét cho huy hiệu
+        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = '#ffffff';
+        ctx.stroke();
+
+        // Số thứ tự màu trắng in đậm
+        ctx.shadowColor = 'transparent';
+        ctx.fillStyle = '#ffffff';
+        const fontSize = Math.max(10, Math.round(badgeR * 1.15));
+        ctx.font = `bold ${fontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(num.toString(), bx, by);
+
+        ctx.restore();
+    };
+
+    // Vẽ các đường đã cố định
+    for (let i = 0; i < userDrawLines.length; i++) {
+        const item = userDrawLines[i];
+        const p1 = getCanvasCoords(item.from.x, item.from.y);
+        const p2 = getCanvasCoords(item.to.x, item.to.y);
+        renderArrowItem(p1, p2, item.number, false);
+    }
+
+    // Vẽ đường preview khi đang kéo thả chuột
+    if (isDraggingLine && dragStartLogic && currentDragClient) {
+        const p1 = getCanvasCoords(dragStartLogic.logicX, dragStartLogic.logicY);
+        const hoverLogic = getLogicCoordsFromClient(currentDragClient.x, currentDragClient.y);
+        let p2;
+        if (hoverLogic && (hoverLogic.logicX !== dragStartLogic.logicX || hoverLogic.logicY !== dragStartLogic.logicY)) {
+            p2 = getCanvasCoords(hoverLogic.logicX, hoverLogic.logicY);
+        } else {
+            const rect = canvas.getBoundingClientRect();
+            p2 = {
+                cx: (currentDragClient.x - rect.left) * (boardRect.width / rect.width),
+                cy: (currentDragClient.y - rect.top) * (boardRect.height / rect.height)
+            };
+        }
+        renderArrowItem(p1, p2, userDrawLines.length + 1, true);
+    }
 }
 
 // Vẽ logo 2 bên cửa sông và chữ "Kỳ Lý Cờ Tướng" uốn lượn ở giữa khúc sông
