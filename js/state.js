@@ -69,7 +69,8 @@ export const state = {
     aiPlaysBlack: false,
     isAnalyzing: false,
     engineModule: null,
-    hasAutoSwitchedToAnalyze: false,
+    isStudioMode: false,
+    studioSettings: { autoplay: false, speed: 1.0 },
 
     autoPlayInterval: null,
     isAutoPlaying: false,

@@ -49,3 +49,5 @@ lietke.bat
 *.bak
 *.tmp
 engines_backup/
+temp_frames/
+analysis_output/

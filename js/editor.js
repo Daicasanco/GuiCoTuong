@@ -4,6 +4,7 @@ import { showToast, updateTurnToggleUI, openModal } from './ui.js';
 import { renderBoardFull, renderMoveHistory} from './board.js';
 import { initGame, forceStopAIPlayers, updateVsBotToolButtons } from './game.js';
 import { START_FEN, VschessErrorDict } from './config.js';
+import { onlineState, sendHostBoardUpdate } from './online.js';
 
 function translateVschessError(errStr) {
     let trans = errStr;
@@ -70,6 +71,11 @@ document.addEventListener('click', function(e) {
 
 
 export function turnOnEditMode(btn) {
+    if (state.appMode === 'online' && !onlineState.isHost) {
+        showToast("⚠️ Chỉ chủ phòng mới có quyền xếp cờ!");
+        return;
+    }
+
     state.pvLines = [];
     
     state.selectedSquare = null;
@@ -164,6 +170,9 @@ export function finishEditing(btn) {
             openModal('vsbot-setup-modal');
         } else {
             initGame(newFenFull); 
+            if (state.appMode === 'online') {
+                sendHostBoardUpdate(newFenFull);
+            }
         }
     } else {
         state.currentNode = state.preEditNode;

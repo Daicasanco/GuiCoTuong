@@ -8,6 +8,7 @@ import { initPikafish, triggerEngineEvaluation, botProfiles } from './engine.js'
 import { handleEditSquareClick } from './editor.js';
 import { formatGameInfoString, mergeGameInfo, saveGameState } from './io.js';
 import { checkDraw60Moves, getStrictLegalMoves } from './rules.js';
+import { isOnlineMode, isMyOnlineTurn, getMyOnlineColor, sendOnlineMove, updateOnlineRoomBar, onlineState } from './online.js';
 
 import { playAudio } from './audio.js';
 
@@ -434,7 +435,17 @@ export function handleSquareClick(x, y, iccsPos) {
     
     const isRedTurn = state.currentNode.fen.split(" ")[1] === "w";
 
-    if (state.appMode === 'vsbot') {
+    if (state.appMode === 'online') {
+        if (!onlineState.roomCode) {
+            showToast("⚠️ Bạn chưa tham gia phòng cờ nào!");
+            return;
+        }
+        if (!isMyOnlineTurn()) {
+            showToast("⏳ Chưa tới lượt đi của bạn!");
+            return;
+        }
+    }
+    else if (state.appMode === 'vsbot') {
         const isBotTurn = (state.vsBotSettings.botColor === 'red' && isRedTurn) || (state.vsBotSettings.botColor === 'black' && !isRedTurn);
         if (isBotTurn) return; 
     } 
@@ -487,12 +498,26 @@ export function handleSquareClick(x, y, iccsPos) {
             
             clearUserDrawLines();
             executeMove(moveCommand); 
+
+            if (state.appMode === 'online') {
+                const nextTurn = state.currentNode.fen.split(" ")[1];
+                sendOnlineMove(moveCommand, state.currentNode.fen, nextTurn);
+                updateOnlineRoomBar();
+            }
             return; 
         }
     }
     
     const pieceCode = state.currentSituation[vschess.i2s[iccsPos]];
     if (pieceCode > 1 && (pieceCode >> 4) === state.currentSituation[0]) {
+        if (state.appMode === 'online') {
+            const myColor = getMyOnlineColor();
+            const pieceColor = (pieceCode >> 4) === 1 ? 'red' : 'black';
+            if (pieceColor !== myColor) {
+                showToast("⚠️ Bạn không thể điều khiển quân của đối thủ!");
+                return;
+            }
+        }
         state.selectedSquare = { x, y, iccs: iccsPos };
         state.legalMoves = getStrictLegalMoves(state.currentSituation, state.currentNode.fen).filter(m => m.startsWith(iccsPos));
     } else {
@@ -904,7 +929,7 @@ export function executeMove(moveCommand, isJump = false, isReverse = false) {
                 state.aiPlaysRed = !isRedFirst;  // Máy chỉ cầm quân địch
                 state.aiPlaysBlack = isRedFirst;
             }
-            if (!isJump && state.appMode !== 'memorize') triggerEngineEvaluation(); 
+            if (!isJump && state.appMode !== 'memorize' && state.appMode !== 'online') triggerEngineEvaluation(); 
             updateVsBotToolButtons(); 
             updateBlindTurnUI();
             if (state.appMode === 'memorize') {

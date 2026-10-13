@@ -506,19 +506,19 @@ function handleBookResults(movesList, isAITurn, isRedTurn, container, fen) {
 }
 
 export function triggerEngineEvaluation() {
-    if (!state.engineModule || state.isEditMode) return;
+    if (!state.engineModule || state.isEditMode || state.appMode === 'online') return;
     pendingAction = 'eval';
     handleStateTransition();
 }
 
 export function triggerHintEvaluation() {
-    if (!state.engineModule || state.isAnimating || state.isAutoPlaying) return;
+    if (!state.engineModule || state.isAnimating || state.isAutoPlaying || state.appMode === 'online') return;
     pendingAction = 'hint';
     handleStateTransition();
 }
 
 export function triggerAnalyzeOnly() {
-    if (!state.engineModule || state.isAnimating || state.isAutoPlaying) return;
+    if (!state.engineModule || state.isAnimating || state.isAutoPlaying || state.appMode === 'online') return;
     pendingAction = 'analyze';
     handleStateTransition();
 }

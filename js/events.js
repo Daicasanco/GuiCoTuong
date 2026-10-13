@@ -12,6 +12,7 @@ import { uploadLocalBook, deleteLocalBook, loadLocalBookFromDB } from './localbo
 import { renderEvalGraph } from './analysis/eval-graph.js';
 import { runAutoGameReview } from './analysis/auto-review.js';
 import { runAIAnnotation } from './analysis/ai-annotate.js';
+import { createOnlineRoom, joinOnlineRoom, leaveOnlineRoom, sendHostSetTurn, sendHostSwapSides, sendResetGame, updateOnlineRoomBar, onlineState } from './online.js';
 
 let pendingDeletePuzKey = "";
 
@@ -132,7 +133,7 @@ function resetAIUI() {
     }
 }
 
-async function switchMode(newMode, customFen = START_FEN) {
+export async function switchMode(newMode, customFen = START_FEN) {
     document.querySelectorAll('.menu-item').forEach(btn => btn.classList.remove('menu-item-active'));
     let targetMenuId = `menu-${newMode}`;
     if (newMode === 'vsbot') targetMenuId = 'menu-bot'; 
@@ -173,6 +174,12 @@ async function switchMode(newMode, customFen = START_FEN) {
         
         state.appMode = newMode;
         state.appSettings.appMode = newMode;
+
+        document.body.classList.toggle('mode-online', newMode === 'online');
+        const onlineBar = document.getElementById('online-room-bar');
+        if (onlineBar) {
+            onlineBar.style.display = (newMode === 'online' && onlineState.roomCode) ? 'flex' : 'none';
+        }
         
         try { storage.saveSystem(state.appSettings); } catch(e) {}
 
@@ -2559,4 +2566,166 @@ export function initEvents() {
         hideLoading();
     }
     updateEngineToggleButtonUI();
+
+    // ==========================================
+    // KHỞI TẠO CÁC SỰ KIỆN CHO PHÒNG CHƠI ONLINE
+    // ==========================================
+    initOnlineEvents();
+}
+
+function initOnlineEvents() {
+    // 1. Mở modal từ Menu
+    const menuOnline = document.getElementById('menu-online');
+    if (menuOnline) {
+        menuOnline.onclick = () => {
+            closeModal('main-menu-modal');
+            openModal('online-room-modal');
+        };
+    }
+
+    // 2. Chuyển đổi Tab (Tạo phòng / Vào phòng)
+    const tabBtnCreate = document.getElementById('tab-btn-create-room');
+    const tabBtnJoin = document.getElementById('tab-btn-join-room');
+    const tabContentCreate = document.getElementById('tab-content-create');
+    const tabContentJoin = document.getElementById('tab-content-join');
+
+    if (tabBtnCreate && tabBtnJoin && tabContentCreate && tabContentJoin) {
+        tabBtnCreate.onclick = () => {
+            tabBtnCreate.classList.add('active');
+            tabBtnJoin.classList.remove('active');
+            tabContentCreate.style.display = 'flex';
+            tabContentJoin.style.display = 'none';
+        };
+        tabBtnJoin.onclick = () => {
+            tabBtnJoin.classList.add('active');
+            tabBtnCreate.classList.remove('active');
+            tabContentJoin.style.display = 'flex';
+            tabContentCreate.style.display = 'none';
+            const inputCode = document.getElementById('input-online-roomcode');
+            if (inputCode) setTimeout(() => inputCode.focus(), 100);
+        };
+    }
+
+    // 3. Nút Tạo Phòng
+    const btnDoCreateRoom = document.getElementById('btn-do-create-room');
+    if (btnDoCreateRoom) {
+        btnDoCreateRoom.onclick = async () => {
+            const chosenColor = document.querySelector('input[name="host-color-choice"]:checked')?.value || 'red';
+            await createOnlineRoom(chosenColor);
+        };
+    }
+
+    // 4. Nút Vào Phòng và phím Enter trong ô nhập mã
+    const btnDoJoinRoom = document.getElementById('btn-do-join-room');
+    const inputOnlineRoomCode = document.getElementById('input-online-roomcode');
+    if (btnDoJoinRoom && inputOnlineRoomCode) {
+        btnDoJoinRoom.onclick = async () => {
+            const code = inputOnlineRoomCode.value.trim().toUpperCase();
+            if (!code) {
+                showToast('⚠️ Vui lòng nhập mã phòng!');
+                return;
+            }
+            await joinOnlineRoom(code);
+        };
+        inputOnlineRoomCode.addEventListener('keyup', (e) => {
+            if (e.key === 'Enter') {
+                btnDoJoinRoom.click();
+            }
+        });
+    }
+
+    // 5. Nút Đóng Modal
+    const btnCloseOnlineModal = document.getElementById('btn-close-online-modal');
+    if (btnCloseOnlineModal) {
+        btnCloseOnlineModal.onclick = () => {
+            closeModal('online-room-modal');
+        };
+    }
+
+    // 6. Sao chép link / mã phòng
+    const btnCopyRoomCode = document.getElementById('btn-copy-roomcode');
+    if (btnCopyRoomCode) {
+        btnCopyRoomCode.onclick = () => {
+            if (!onlineState.roomCode) return;
+            const shareUrl = `${window.location.origin}${window.location.pathname}?room=${onlineState.roomCode}`;
+            copyToClipboard(shareUrl);
+            showToast(`📋 Đã sao chép link mời: ${onlineState.roomCode}`);
+        };
+    }
+
+    // 7. Rời phòng
+    const btnOnlineLeave = document.getElementById('btn-online-leave');
+    if (btnOnlineLeave) {
+        btnOnlineLeave.onclick = () => {
+            if (confirm('Bạn có chắc chắn muốn rời khỏi phòng cờ này?')) {
+                leaveOnlineRoom();
+            }
+        };
+    }
+
+    // 8. Quyền của Chủ phòng: Xếp Cờ
+    const btnOnlineEdit = document.getElementById('btn-online-edit');
+    if (btnOnlineEdit) {
+        btnOnlineEdit.onclick = () => {
+            if (!onlineState.isHost) {
+                showToast('⚠️ Chỉ chủ phòng mới có quyền xếp cờ!');
+                return;
+            }
+            turnOnEditMode();
+        };
+    }
+
+    // 9. Quyền của Chủ phòng: Đổi Lượt Đi
+    const btnOnlineSetTurn = document.getElementById('btn-online-set-turn');
+    if (btnOnlineSetTurn) {
+        btnOnlineSetTurn.onclick = () => {
+            if (!onlineState.isHost) {
+                showToast('⚠️ Chỉ chủ phòng mới có quyền đổi lượt đi!');
+                return;
+            }
+            const currentTurn = state.currentNode ? state.currentNode.fen.split(' ')[1] : onlineState.currentTurn;
+            const nextTurn = currentTurn === 'w' ? 'b' : 'w';
+            sendHostSetTurn(nextTurn);
+        };
+    }
+
+    // 10. Quyền của Chủ phòng: Đổi Bên (Đỏ <-> Đen)
+    const btnOnlineSwap = document.getElementById('btn-online-swap');
+    if (btnOnlineSwap) {
+        btnOnlineSwap.onclick = () => {
+            if (!onlineState.isHost) {
+                showToast('⚠️ Chỉ chủ phòng mới có quyền đổi bên!');
+                return;
+            }
+            sendHostSwapSides();
+        };
+    }
+
+    // 11. Quyền của Chủ phòng: Ván Mới
+    const btnOnlineReset = document.getElementById('btn-online-reset');
+    if (btnOnlineReset) {
+        btnOnlineReset.onclick = () => {
+            if (!onlineState.isHost) {
+                showToast('⚠️ Chỉ chủ phòng mới có quyền khởi tạo ván mới!');
+                return;
+            }
+            if (confirm('Bắt đầu ván mới với thế cờ tiêu chuẩn?')) {
+                sendResetGame();
+            }
+        };
+    }
+
+    // 12. Kiểm tra nếu người dùng vào web qua link chia sẻ (?room=XXXXXX)
+    try {
+        const urlParams = new URLSearchParams(window.location.search);
+        const roomFromUrl = urlParams.get('room');
+        if (roomFromUrl && roomFromUrl.trim().length > 0) {
+            const cleanCode = roomFromUrl.trim().toUpperCase();
+            if (inputOnlineRoomCode) inputOnlineRoomCode.value = cleanCode;
+            if (tabBtnJoin) tabBtnJoin.click();
+            setTimeout(() => {
+                openModal('online-room-modal');
+            }, 300);
+        }
+    } catch (e) {}
 }

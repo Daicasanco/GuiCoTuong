@@ -100,7 +100,7 @@
                 </div>
 
                 <!-- NÚT CỦA CÁC CHẾ ĐỘ CÒN LẠI -->
-                <div class="tool-btn-outer hide-on-edit hide-on-vsbot hide-on-puzzle" id="btn-ai-red"
+                <div class="tool-btn-outer hide-on-edit hide-on-vsbot hide-on-puzzle hide-on-online" id="btn-ai-red"
                     title="Máy cầm Đỏ">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#ff0000"
                         stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="icon tool-btn">
@@ -108,7 +108,7 @@
                         <line x1="2" x2="22" y1="20" y2="20" />
                     </svg>
                 </div>
-                <div class="tool-btn-outer hide-on-edit hide-on-vsbot hide-on-puzzle" id="btn-ai-black"
+                <div class="tool-btn-outer hide-on-edit hide-on-vsbot hide-on-puzzle hide-on-online" id="btn-ai-black"
                     title="Máy cầm Đen">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#000000"
                         stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="icon tool-btn">
@@ -116,7 +116,7 @@
                         <line x1="2" x2="22" y1="20" y2="20" />
                     </svg>
                 </div>
-                <div class="tool-btn-outer hide-on-edit hide-on-vsbot hide-on-blind hide-on-puzzle" id="btn-analyze"
+                <div class="tool-btn-outer hide-on-edit hide-on-vsbot hide-on-blind hide-on-puzzle hide-on-online" id="btn-analyze"
                     title="Phân tích">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#000000"
                         stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="icon tool-btn">
@@ -124,7 +124,7 @@
                         <circle cx="11" cy="11" r="8" />
                     </svg>
                 </div>
-                <div class="tool-btn-outer hide-on-edit hide-on-vsbot hide-on-blind hide-on-puzzle" id="btn-review"
+                <div class="tool-btn-outer hide-on-edit hide-on-vsbot hide-on-blind hide-on-puzzle hide-on-online" id="btn-review"
                     title="Phân tích sai lầm (Auto Review)">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#c0392b"
                         stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="icon tool-btn">
@@ -132,7 +132,7 @@
                         <path d="M4 22V4a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v18l-8-4z" />
                     </svg>
                 </div>
-                <div class="tool-btn-outer hide-on-edit hide-on-vsbot hide-on-blind hide-on-puzzle" id="btn-ai-annotate"
+                <div class="tool-btn-outer hide-on-edit hide-on-vsbot hide-on-blind hide-on-puzzle hide-on-online" id="btn-ai-annotate"
                     title="Sinh Ghi Chú AI (Gemini)">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6"
                         stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="icon tool-btn">
@@ -146,7 +146,7 @@
                         <path d="M16 18a4 4 0 0 0-8 0" />
                     </svg>
                 </div>
-                <div class="tool-btn-outer hide-on-edit hide-on-vsbot hide-on-blind hide-on-puzzle" id="btn-go-instant"
+                <div class="tool-btn-outer hide-on-edit hide-on-vsbot hide-on-blind hide-on-puzzle hide-on-online" id="btn-go-instant"
                     title="Đi ngay">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#000000"
                         stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="icon tool-btn">
@@ -220,6 +220,28 @@
             <!-- CỘT TRÁI -->
             <section id="board-section">
                 <div class="board-wrapper">
+                    <!-- THANH TRẠNG THÁI PHÒNG ONLINE -->
+                    <div id="online-room-bar" style="display: none;">
+                        <div class="online-bar-top">
+                            <div class="online-room-tag" id="btn-copy-roomcode" title="Bấm để sao chép mã">
+                                <span>Phòng:</span> <strong id="online-bar-roomcode">------</strong> 📋
+                            </div>
+                            <div class="online-role-badge">
+                                <span id="online-bar-role">Chủ phòng</span> • <span id="online-bar-myside">🔴 Quân Đỏ</span> • <span id="online-bar-oppstatus">⏳ Đang chờ...</span>
+                            </div>
+                            <div class="online-turn-badge" id="online-bar-turn">
+                                👉 TỚI LƯỢT BẠN
+                            </div>
+                            <button class="btn-online-leave-top" id="btn-online-leave" title="Rời khỏi phòng">🚪 Rời phòng</button>
+                        </div>
+                        <div id="online-bar-host-controls" class="online-bar-host-row" style="display: none;">
+                            <button class="btn-host-action" id="btn-online-edit" title="Chủ phòng chỉnh sửa bàn cờ">🛠️ Xếp Cờ</button>
+                            <button class="btn-host-action" id="btn-online-set-turn" title="Chọn lượt đi tiếp theo">🎯 Đổi Lượt</button>
+                            <button class="btn-host-action" id="btn-online-swap" title="Hoán đổi phe Đỏ và Đen">🔄 Đổi Bên</button>
+                            <button class="btn-host-action" id="btn-online-reset" title="Khởi tạo ván mới">🆕 Ván Mới</button>
+                        </div>
+                    </div>
+
                     <div id="chess-board-area">
                         <div id="ai-thinking-spinner" style="display: none;"></div>
                         <canvas id="chess-canvas"></canvas>
@@ -825,6 +847,7 @@
             <div class="modal-body" style="padding: 0; display: flex; flex-direction: column;">
                 <button class="menu-item menu-item-active" id="menu-analyze">🔍 Phân Tích</button>
                 <button class="menu-item" id="menu-bot">🤖 Đấu Vs Bot</button>
+                <button class="menu-item" id="menu-online" style="color: #0284c7; font-weight: bold;">👥 Chơi Với Bạn (Online)</button>
                 <button class="menu-item" id="menu-blind">🔘 Cờ Mù</button>
                 <button class="menu-item" id="menu-puzzle">🧩 Giải Bài Tập</button>
                 <button class="menu-item" id="menu-memorize">📖 Luyện Nhớ Ván</button>
@@ -835,6 +858,73 @@
             <div style="display: flex; border-top: 1px solid #eee;">
                 <button class="modal-btn-half" id="btn-close-main-menu"
                     style="color: #d32f2f; font-weight: bold; width: 100%;">Đóng</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL CHƠI VỚI BẠN (ONLINE ROOM) -->
+    <div id="online-room-modal" class="modal-overlay">
+        <div class="modal-content" style="width: 340px; border-radius: 12px; overflow: hidden;">
+            <div class="modal-header" style="justify-content: center; font-size: 18px; color: #1e293b; font-weight: 800; background: #f8fafc; border-bottom: 1px solid #e2e8f0;">
+                👥 Chơi Với Bạn (Online)
+            </div>
+
+            <!-- Tab Switcher -->
+            <div style="display: flex; border-bottom: 1px solid #e2e8f0;">
+                <button class="online-tab-btn active" id="tab-btn-create-room">➕ Tạo Phòng</button>
+                <button class="online-tab-btn" id="tab-btn-join-room">🔑 Vào Phòng</button>
+            </div>
+
+            <!-- TAB 1: TẠO PHÒNG -->
+            <div id="tab-content-create" style="padding: 16px; display: flex; flex-direction: column; gap: 14px;">
+                <div style="font-size: 13px; color: #475569; line-height: 1.4;">
+                    Tạo phòng để lấy mã 6 số gửi cho bạn bè cùng chơi trực tiếp.
+                </div>
+
+                <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px;">
+                    <div style="font-size: 12px; font-weight: bold; color: #334155; margin-bottom: 8px;">
+                        Bạn muốn cầm quân nào?
+                    </div>
+                    <div style="display: flex; gap: 10px;">
+                        <label style="flex: 1; display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; cursor: pointer; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px; padding: 6px 10px;">
+                            <input type="radio" name="host-color-choice" value="red" checked>
+                            <span style="color: #dc2626;">🔴 Quân Đỏ</span>
+                        </label>
+                        <label style="flex: 1; display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; cursor: pointer; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px; padding: 6px 10px;">
+                            <input type="radio" name="host-color-choice" value="black">
+                            <span style="color: #1e293b;">⚫ Quân Đen</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div style="font-size: 11px; color: #64748b; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px; padding: 8px;">
+                    🛡️ <strong>Đặc quyền Chủ phòng:</strong> Được quyền xếp quân chỉnh sửa bàn cờ và chọn tới lượt ai đi bất cứ lúc nào. Chế độ này <strong>hoàn toàn cấm bật thẩm</strong> để đảm bảo công bằng.
+                </div>
+
+                <button id="btn-do-create-room" style="background: #008a3e; color: #ffffff; border: none; border-radius: 8px; padding: 10px; font-size: 15px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 6px rgba(0, 138, 62, 0.3);">
+                    🚀 Bắt Đầu Tạo Phòng
+                </button>
+            </div>
+
+            <!-- TAB 2: VÀO PHÒNG BẰNG MÃ -->
+            <div id="tab-content-join" style="padding: 16px; display: none; flex-direction: column; gap: 14px;">
+                <div style="font-size: 13px; color: #475569;">
+                    Nhập mã phòng 6 số do bạn bè gửi để vào thi đấu:
+                </div>
+
+                <div>
+                    <input type="text" id="input-online-roomcode" class="online-code-input" placeholder="MÃ PHÒNG" maxlength="6" autocomplete="off">
+                </div>
+
+                <button id="btn-do-join-room" style="background: #2563eb; color: #ffffff; border: none; border-radius: 8px; padding: 10px; font-size: 15px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 6px rgba(37, 99, 235, 0.3);">
+                    🎮 Vào Phòng Chơi
+                </button>
+            </div>
+
+            <div style="display: flex; border-top: 1px solid #eee;">
+                <button class="modal-btn-half" id="btn-close-online-modal" style="color: #64748b; font-weight: bold; width: 100%;">
+                    Đóng
+                </button>
             </div>
         </div>
     </div>

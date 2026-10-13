@@ -7,25 +7,34 @@ import { initGame } from './js/game.js';
 import { initEvents } from './js/events.js';
 import { preloadImages, initCanvas } from './js/board.js';
 
+const urlParams = new URLSearchParams(window.location.search);
+const isStudio = urlParams.get('mode') === 'studio' || urlParams.get('studio') === '1';
+
 // Cài đặt Event Toàn cục
-initEvents();
+if (!isStudio) {
+    initEvents();
+}
 
 // Vòng đời ứng dụng (Khi trang Web tải xong)
 window.onload = async () => {
-    
     await preloadImages();
     initCanvas();
 
-    // Truyền tham số thứ 2 là 'true' để hệ thống bóc LocalStorage ra dùng
-    initGame(undefined, true);
-    
-    // Lấy thông tin phiên bản từ file Service Worker để in ra Cài đặt
-    fetchAppVersion();
+    if (isStudio) {
+        const { studio } = await import('./js/studio.js');
+        await studio.init();
+    } else {
+        // Truyền tham số thứ 2 là 'true' để hệ thống bóc LocalStorage ra dùng
+        initGame(undefined, true);
+        
+        // Lấy thông tin phiên bản từ file Service Worker để in ra Cài đặt
+        fetchAppVersion();
 
-    const resizeObserver = new ResizeObserver(() => {
-        window.dispatchEvent(new Event('resize'));
-    });
-    resizeObserver.observe(document.body);
+        const resizeObserver = new ResizeObserver(() => {
+            window.dispatchEvent(new Event('resize'));
+        });
+        resizeObserver.observe(document.body);
+    }
 };
 
 // Đăng ký Service Worker

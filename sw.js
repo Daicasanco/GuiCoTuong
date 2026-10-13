@@ -1,5 +1,5 @@
 // sw.js
-const CACHE_NAME = '0.9.9b';
+const CACHE_NAME = '0.9.9c';
 
 const urlsToCache = [
     './',
@@ -12,6 +12,7 @@ const urlsToCache = [
     './js/board.js',
     './js/game.js',
     './js/editor.js',
+    './js/online.js',
     './js/io.js',
     './js/events.js',
     './js/rules.js',

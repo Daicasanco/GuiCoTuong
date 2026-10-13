@@ -23,7 +23,7 @@ const TO_SCALE = 1.1;             // Điểm đến nước đi trước (to.web
 export function preloadImages() {
     return new Promise((resolve) => {
         const pieceKeys = Object.keys(PIECE_MAP);
-        const extraImages = ['shadow', 'dot', 'from', 'to', 'selection', 'blind_b', 'blind_w', 'logo_kyly']; // Các ảnh hiệu ứng & logo sông
+        const extraImages = ['shadow', 'dot', 'from', 'to', 'selection', 'blind_b', 'blind_w', 'logo_kyly', 'board']; // Thêm board để canvas có thể tự render toàn bộ
         
         let loadedCount = 0;
         const totalImages = pieceKeys.length + extraImages.length; 
@@ -92,6 +92,27 @@ export function startCanvasAnimation(fromIccs, toIccs, pieceCode) {
         startTime: performance.now(),
         duration: 150 // Thời gian trượt 150ms
     };
+}
+
+export function startStudioCanvasAnimation(fromIccs, toIccs, pieceCode, startTimeMs, durationMs = 350) {
+    if (vschess.i2b[fromIccs] === undefined || vschess.i2b[toIccs] === undefined) return;
+    const fromXY = vschess.i2b[fromIccs];
+    const toXY = vschess.i2b[toIccs];
+    const pStart = getCanvasCoords(fromXY % 9, Math.floor(fromXY / 9));
+    const pEnd = getCanvasCoords(toXY % 9, Math.floor(toXY / 9));
+
+    animState = {
+        from: fromIccs,
+        to: toIccs,
+        piece: pieceCode,
+        startX: pStart.cx,
+        startY: pStart.cy,
+        endX: pEnd.cx,
+        endY: pEnd.cy,
+        startTime: startTimeMs,
+        duration: durationMs
+    };
+    state.isAnimating = true;
 }
 
 export function setBoardTheme(themeName) {
@@ -405,6 +426,11 @@ export function getCanvasCoords(logicX, logicY) {
 
 // VÒNG LẶP RENDER CHÍNH
 function renderLoop() {
+    if (state.isStudioMode) {
+        requestAnimationFrame(renderLoop);
+        return;
+    }
+
     if (!ctx || !boardRect.width) { requestAnimationFrame(renderLoop); return; }
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -419,6 +445,137 @@ function renderLoop() {
     drawUserDrawnLines();        // <--- VẼ CÁC ĐƯỜNG KẺ CHIẾN THUẬT DO NGƯỜI DÙNG KÉO THẢ
 
     requestAnimationFrame(renderLoop);
+}
+
+// =========================================================
+// STUDIO MODE DETERMINISTIC RENDERER
+// =========================================================
+export function renderStudioFrame(virtualTimeMs, customArrows = []) {
+    if (!ctx || !boardRect.width) return;
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // 1. Vẽ mặt bàn cờ trực tiếp lên Canvas (giúp Canvas tự đứng độc lập 100%)
+    const boardImg = imageCache['board'];
+    if (boardImg && boardImg.complete && boardImg.naturalWidth > 0) {
+        ctx.drawImage(boardImg, 0, 0, boardRect.width, boardRect.height);
+    }
+
+    drawRiverDecoration();
+    drawLastMoveHighlights();
+    drawStaticPieces();
+    drawAnimatingPieceStudio(virtualTimeMs);
+    drawStudioArrows(customArrows);
+}
+
+function drawAnimatingPieceStudio(virtualTimeMs) {
+    if (!animState || !state.isAnimating) return;
+
+    const startX = animState.startX;
+    const startY = animState.startY;
+    const endX = animState.endX;
+    const endY = animState.endY;
+    const pieceCode = animState.piece;
+
+    const elapsed = virtualTimeMs - animState.startTime;
+    let progress = elapsed / animState.duration;
+
+    if (progress >= 1) {
+        progress = 1;
+        animState = null;
+        state.isAnimating = false;
+    } else if (progress < 0) {
+        progress = 0;
+    }
+
+    const f = 1 - progress;
+    const easeOut = 1 - (f * f * f);
+
+    const currentX = Math.round(startX + (endX - startX) * easeOut);
+    const currentY = Math.round(startY + (endY - startY) * easeOut);
+
+    const img = getPieceImage(pieceCode);
+    if (img) {
+        const pSize = Math.round(pieceSize);
+        const halfSize = Math.round(pSize / 2);
+
+        const shadowImg = imageCache['shadow'];
+        if (shadowImg) {
+            const sSize = Math.round(pSize * SHADOW_SCALE);
+            const halfSSize = Math.round(sSize / 2);
+            const flyOffsetX = Math.round(pSize * SHADOW_OFFSET_X_PCT);
+            const flyOffsetY = Math.round(pSize * SHADOW_OFFSET_Y_PCT);
+            ctx.drawImage(shadowImg, currentX - halfSSize + flyOffsetX, currentY - halfSSize + flyOffsetY, sSize, sSize);
+        }
+
+        ctx.drawImage(img, currentX - halfSize, currentY - halfSize, pSize, pSize);
+    }
+}
+
+export function drawStudioArrows(arrows = []) {
+    if (!ctx || !boardRect.width || !arrows || arrows.length === 0) return;
+
+    arrows.forEach(arrow => {
+        if (!arrow || !arrow.uci) return;
+        const move = arrow.uci.trim().toLowerCase();
+        if (move.length < 4) return;
+        const fromKey = move.substring(0, 2);
+        const toKey = move.substring(2, 4);
+        if (vschess.i2b[fromKey] === undefined || vschess.i2b[toKey] === undefined) return;
+
+        const fXY = vschess.i2b[fromKey];
+        const tXY = vschess.i2b[toKey];
+        const p1 = getCanvasCoords(fXY % 9, Math.floor(fXY / 9));
+        const p2 = getCanvasCoords(tXY % 9, Math.floor(tXY / 9));
+        if (!p1 || !p2) return;
+
+        const dx = p2.cx - p1.cx;
+        const dy = p2.cy - p1.cy;
+        const angle = Math.atan2(dy, dx);
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        if (distance < 1) return;
+
+        const headLength = pieceSize * 0.32;
+        const headWidth = pieceSize * 0.46;
+        const tailStartWidth = pieceSize * 0.05;
+        const tailEndWidth = pieceSize * 0.22;
+
+        ctx.save();
+        if (arrow.opacity !== undefined) ctx.globalAlpha = Math.max(0, Math.min(1, arrow.opacity));
+        ctx.translate(p1.cx, p1.cy);
+        ctx.rotate(angle);
+
+        ctx.beginPath();
+        ctx.moveTo(0, tailStartWidth / 2);
+        ctx.lineTo(distance - headLength, tailEndWidth / 2);
+        ctx.lineTo(distance - headLength, headWidth / 2);
+        ctx.lineTo(distance, 0);
+        ctx.lineTo(distance - headLength, -headWidth / 2);
+        ctx.lineTo(distance - headLength, -tailEndWidth / 2);
+        ctx.lineTo(0, -tailStartWidth / 2);
+        ctx.closePath();
+
+        ctx.fillStyle = arrow.color || 'rgba(230, 81, 0, 0.9)';
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.45)';
+        ctx.shadowBlur = 6;
+        ctx.fill();
+
+        ctx.restore();
+
+        if (arrow.label) {
+            const textOffset = headLength * 0.65;
+            const textX = p2.cx - Math.cos(angle) * textOffset;
+            const textY = p2.cy - Math.sin(angle) * textOffset;
+            ctx.save();
+            if (arrow.opacity !== undefined) ctx.globalAlpha = Math.max(0, Math.min(1, arrow.opacity));
+            ctx.fillStyle = 'white';
+            ctx.font = `bold ${Math.round(pieceSize * 0.22)}px Arial`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(arrow.label, textX, textY + 1);
+            ctx.restore();
+        }
+    });
 }
 
 // Vẽ các đường kẻ chiến thuật do người dùng vẽ (có đánh số thứ tự 1, 2, 3...)
