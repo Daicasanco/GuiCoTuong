@@ -1,7 +1,8 @@
 // js/online.js
 import { state } from './state.js';
 import { showToast, showLoading, hideLoading, openModal, closeModal, updateTurnToggleUI } from './ui.js';
-import { initGame, executeMove, START_FEN } from './game.js';
+import { initGame, executeMove } from './game.js';
+import { START_FEN } from './config.js';
 import { clearUserDrawLines, renderBoardFull } from './board.js';
 
 export const onlineState = {

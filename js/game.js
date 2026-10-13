@@ -1,6 +1,7 @@
 // js/game.js
 import { state, storage } from './state.js';
 import { START_FEN, defaultGameInfo } from './config.js';
+export { START_FEN };
 import { getWorkspace, saveWorkspace } from './db.js';
 import { openModal, showToast, renderGameList,hideAILoading } from './ui.js';
 import { renderBoardFull, clearDots, drawLastMoveDots, renderMoveHistory, clearArrow, startCanvasAnimation, updateScoreBar, clearUserDrawLines } from './board.js';
