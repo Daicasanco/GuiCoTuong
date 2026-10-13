@@ -193,6 +193,7 @@ function handleOnlineMessage(data) {
         showToast('🚪 ' + (data.message || 'Chủ phòng đã rời phòng!'));
         onlineState.roomCode = null;
         onlineState.opponentJoined = false;
+        document.body.classList.remove('mode-online');
         updateOnlineRoomBar();
         return;
     }
@@ -217,6 +218,7 @@ async function enterOnlineGame(initialFen, myColor) {
     clearUserDrawLines();
     state.appMode = 'online';
     state.appSettings.appMode = 'online';
+    document.body.classList.add('mode-online');
 
     // CẤM BẬT THẨM / TẮT HOÀN TOÀN ENGINE PIKAFISH
     state.isAnalyzing = false;
@@ -350,6 +352,7 @@ export function leaveOnlineRoom() {
 
     onlineState.roomCode = null;
     onlineState.opponentJoined = false;
+    document.body.classList.remove('mode-online');
     showToast('🚪 Đã rời phòng chơi.');
 
     // Chuyển lại về chế độ Phân Tích mặc định
@@ -388,29 +391,29 @@ export function updateOnlineRoomBar() {
     const mySideEl = document.getElementById('online-bar-myside');
     if (mySideEl) {
         if (onlineState.myColor === 'red') {
-            mySideEl.innerHTML = '<span style="color: #dc2626; font-weight: bold;">🔴 Quân Đỏ</span>';
+            mySideEl.innerHTML = '<span style="color: #dc2626; font-weight: bold;">🔴 Đỏ</span>';
         } else {
-            mySideEl.innerHTML = '<span style="color: #1f2937; font-weight: bold;">⚫ Quân Đen</span>';
+            mySideEl.innerHTML = '<span style="color: #1f2937; font-weight: bold;">⚫ Đen</span>';
         }
     }
 
     const oppStatusEl = document.getElementById('online-bar-oppstatus');
     if (oppStatusEl) {
         if (onlineState.opponentJoined) {
-            oppStatusEl.innerHTML = '<span style="color: #16a34a; font-weight: bold;">🟢 Đã vào phòng</span>';
+            oppStatusEl.innerHTML = '<span style="color: #16a34a; font-weight: bold;">🟢 Đã vào</span>';
         } else {
-            oppStatusEl.innerHTML = '<span style="color: #ea580c; font-weight: bold;">⏳ Đang chờ...</span>';
+            oppStatusEl.innerHTML = '<span style="color: #ea580c; font-weight: bold;">⏳ Đang chờ</span>';
         }
     }
 
     const turnIndicatorEl = document.getElementById('online-bar-turn');
     if (turnIndicatorEl) {
         if (!onlineState.opponentJoined && onlineState.isHost) {
-            turnIndicatorEl.innerHTML = '<span style="color: #ea580c;">Đang chờ bạn vào mã...</span>';
+            turnIndicatorEl.innerHTML = '<span style="color: #ea580c;">⏳ Chờ khách...</span>';
         } else if (isMyTurn) {
-            turnIndicatorEl.innerHTML = '<span style="color: #16a34a; font-weight: bold; animation: pulse 1.5s infinite;">👉 TỚI LƯỢT BẠN</span>';
+            turnIndicatorEl.innerHTML = '<span style="color: #16a34a; font-weight: bold;">👉 LƯỢT BẠN</span>';
         } else {
-            turnIndicatorEl.innerHTML = '<span style="color: #6b7280;">⏳ Đợi đối thủ đi...</span>';
+            turnIndicatorEl.innerHTML = '<span style="color: #64748b;">⏳ Đợi đối thủ</span>';
         }
     }
 

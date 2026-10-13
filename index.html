@@ -219,29 +219,29 @@
         <main id="main-content">
             <!-- CỘT TRÁI -->
             <section id="board-section">
-                <div class="board-wrapper">
-                    <!-- THANH TRẠNG THÁI PHÒNG ONLINE -->
-                    <div id="online-room-bar" style="display: none;">
-                        <div class="online-bar-top">
-                            <div class="online-room-tag" id="btn-copy-roomcode" title="Bấm để sao chép mã">
-                                <span>Phòng:</span> <strong id="online-bar-roomcode">------</strong> 📋
-                            </div>
-                            <div class="online-role-badge">
-                                <span id="online-bar-role">Chủ phòng</span> • <span id="online-bar-myside">🔴 Quân Đỏ</span> • <span id="online-bar-oppstatus">⏳ Đang chờ...</span>
-                            </div>
-                            <div class="online-turn-badge" id="online-bar-turn">
-                                👉 TỚI LƯỢT BẠN
-                            </div>
-                            <button class="btn-online-leave-top" id="btn-online-leave" title="Rời khỏi phòng">🚪 Rời phòng</button>
+                <!-- THANH TRẠNG THÁI PHÒNG ONLINE -->
+                <div id="online-room-bar" style="display: none;">
+                    <div class="online-bar-top">
+                        <div class="online-room-tag" id="btn-copy-roomcode" title="Bấm để sao chép mã và link mời">
+                            <span>Phòng:</span> <strong id="online-bar-roomcode">------</strong> 📋
                         </div>
-                        <div id="online-bar-host-controls" class="online-bar-host-row" style="display: none;">
-                            <button class="btn-host-action" id="btn-online-edit" title="Chủ phòng chỉnh sửa bàn cờ">🛠️ Xếp Cờ</button>
-                            <button class="btn-host-action" id="btn-online-set-turn" title="Chọn lượt đi tiếp theo">🎯 Đổi Lượt</button>
-                            <button class="btn-host-action" id="btn-online-swap" title="Hoán đổi phe Đỏ và Đen">🔄 Đổi Bên</button>
-                            <button class="btn-host-action" id="btn-online-reset" title="Khởi tạo ván mới">🆕 Ván Mới</button>
+                        <div class="online-role-badge">
+                            <span id="online-bar-role">Chủ phòng</span> • <span id="online-bar-myside">🔴 Đỏ</span> • <span id="online-bar-oppstatus">⏳ Đang chờ...</span>
                         </div>
+                        <div class="online-turn-badge" id="online-bar-turn">
+                            👉 TỚI LƯỢT BẠN
+                        </div>
+                        <button class="btn-online-leave-top" id="btn-online-leave" title="Rời khỏi phòng">🚪 Rời</button>
                     </div>
+                    <div id="online-bar-host-controls" class="online-bar-host-row" style="display: none;">
+                        <button class="btn-host-action" id="btn-online-edit" title="Chủ phòng chỉnh sửa bàn cờ">🛠️ Xếp Cờ</button>
+                        <button class="btn-host-action" id="btn-online-set-turn" title="Chọn lượt đi tiếp theo">🎯 Đổi Lượt</button>
+                        <button class="btn-host-action" id="btn-online-swap" title="Hoán đổi phe Đỏ và Đen">🔄 Đổi Bên</button>
+                        <button class="btn-host-action" id="btn-online-reset" title="Khởi tạo ván mới">🆕 Ván Mới</button>
+                    </div>
+                </div>
 
+                <div class="board-wrapper">
                     <div id="chess-board-area">
                         <div id="ai-thinking-spinner" style="display: none;"></div>
                         <canvas id="chess-canvas"></canvas>
