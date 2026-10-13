@@ -181,10 +181,16 @@ function handleOnlineMessage(data) {
 
     // 8. VÁN MỚI
     if (type === 'GAME_RESET') {
-        onlineState.currentTurn = data.currentTurn;
+        onlineState.currentTurn = data.currentTurn || 'w';
         showToast('🆕 ' + (data.message || 'Ván cờ mới bắt đầu!'));
-        initGame(data.fen || START_FEN, true);
-        updateOnlineRoomBar();
+        initGame(data.fen || START_FEN, false).then(() => {
+            state.isBoardFlipped = (onlineState.myColor === 'black');
+            if (state.currentSituation) {
+                renderBoardFull(state.currentSituation);
+            }
+            updateTurnToggleUI();
+            updateOnlineRoomBar();
+        });
         return;
     }
 

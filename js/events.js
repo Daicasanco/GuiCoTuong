@@ -2663,19 +2663,7 @@ function initOnlineEvents() {
         };
     }
 
-    // 8. Quyền của Chủ phòng: Xếp Cờ
-    const btnOnlineEdit = document.getElementById('btn-online-edit');
-    if (btnOnlineEdit) {
-        btnOnlineEdit.onclick = () => {
-            if (!onlineState.isHost) {
-                showToast('⚠️ Chỉ chủ phòng mới có quyền xếp cờ!');
-                return;
-            }
-            turnOnEditMode();
-        };
-    }
-
-    // 9. Quyền của Chủ phòng: Đổi Lượt Đi
+    // 8. Quyền của Chủ phòng: Đổi Lượt Đi
     const btnOnlineSetTurn = document.getElementById('btn-online-set-turn');
     if (btnOnlineSetTurn) {
         btnOnlineSetTurn.onclick = () => {
@@ -2689,7 +2677,7 @@ function initOnlineEvents() {
         };
     }
 
-    // 10. Quyền của Chủ phòng: Đổi Bên (Đỏ <-> Đen)
+    // 9. Quyền của Chủ phòng: Đổi Bên (Đỏ <-> Đen)
     const btnOnlineSwap = document.getElementById('btn-online-swap');
     if (btnOnlineSwap) {
         btnOnlineSwap.onclick = () => {
@@ -2701,7 +2689,7 @@ function initOnlineEvents() {
         };
     }
 
-    // 11. Quyền của Chủ phòng: Ván Mới
+    // 10. Quyền của Chủ phòng: Ván Mới
     const btnOnlineReset = document.getElementById('btn-online-reset');
     if (btnOnlineReset) {
         btnOnlineReset.onclick = () => {
@@ -2709,9 +2697,7 @@ function initOnlineEvents() {
                 showToast('⚠️ Chỉ chủ phòng mới có quyền khởi tạo ván mới!');
                 return;
             }
-            if (confirm('Bắt đầu ván mới với thế cờ tiêu chuẩn?')) {
-                sendResetGame();
-            }
+            sendResetGame();
         };
     }
 

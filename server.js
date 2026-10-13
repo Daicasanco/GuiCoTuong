@@ -589,7 +589,7 @@ wss.on('connection', (ws) => {
         if (type === 'RESET_GAME') {
             if (!ws.isHost) return;
 
-            room.fen = data.fen || 'rnbakabnr/9/1c5c1/s1p1p1p1s/9/9/S1P1P1P1S/1C5C1/9/RNBAKABNR w - - 0 1';
+            room.fen = data.fen || 'rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKABNR w - - 0 1';
             room.currentTurn = 'w';
 
             console.log(`🆕 [Online] Chủ phòng [${roomCode}] bắt đầu ván mới`);
