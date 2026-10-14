@@ -3242,6 +3242,8 @@ function initOnlineEvents() {
         if (timerPermoveGroup) timerPermoveGroup.style.display = mode === 'per_move' ? 'flex' : 'none';
     }
 
+    const timerInputStep = document.getElementById('timer-input-step');
+
     if (timerCustomType) {
         timerCustomType.onchange = () => {
             timerPresetBtns.forEach(b => b.classList.remove('active'));
@@ -3258,11 +3260,14 @@ function initOnlineEvents() {
             if (mode === 'increment') {
                 const base = btn.getAttribute('data-base');
                 const inc = btn.getAttribute('data-inc');
+                const step = btn.getAttribute('data-step') || '0';
                 if (timerInputBase) timerInputBase.value = base;
                 if (timerInputInc) timerInputInc.value = inc;
+                if (timerInputStep) timerInputStep.value = step;
             } else if (mode === 'per_move') {
                 const move = btn.getAttribute('data-move');
                 if (timerInputPermove) timerInputPermove.value = move;
+                if (timerInputStep) timerInputStep.value = move;
             }
             updateTimerCustomVisibility(mode);
         };
@@ -3285,13 +3290,16 @@ function initOnlineEvents() {
             if (mode === 'increment') {
                 const base = parseInt(timerInputBase?.value, 10) || 10;
                 const inc = parseInt(timerInputInc?.value, 10) || 0;
+                const step = parseInt(timerInputStep?.value, 10) || 0;
                 settings.baseMinutes = base;
                 settings.incSeconds = inc;
                 settings.incrementSeconds = inc;
+                settings.stepSeconds = step;
             } else if (mode === 'per_move') {
                 const perMove = parseInt(timerInputPermove?.value, 10) || 90;
                 settings.moveLimitSeconds = perMove;
                 settings.perMoveSeconds = perMove;
+                settings.stepSeconds = perMove;
             }
             sendTimerSettings(settings);
             closeModal('online-timer-modal');

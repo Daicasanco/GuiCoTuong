@@ -1053,12 +1053,12 @@
             <div class="modal-body" style="padding: 14px; display: flex; flex-direction: column; gap: 10px;">
                 <div style="font-size: 12px; color: #64748b; font-weight: 700;">CHỌN NHANH (MẪU PHỔ BIẾN):</div>
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px;">
-                    <button class="timer-preset-btn active" data-mode="increment" data-base="10" data-inc="5">⏱️ 10p + 5s</button>
-                    <button class="timer-preset-btn" data-mode="increment" data-base="15" data-inc="10">⏳ 15p + 10s</button>
-                    <button class="timer-preset-btn" data-mode="increment" data-base="5" data-inc="3">⚡ 5p + 3s</button>
-                    <button class="timer-preset-btn" data-mode="per_move" data-move="90">🎯 1p30s/nước</button>
-                    <button class="timer-preset-btn" data-mode="per_move" data-move="60">🎯 1p/nước</button>
-                    <button class="timer-preset-btn" data-mode="none" data-base="0" data-inc="0">♾️ Tắt đồng hồ</button>
+                    <button class="timer-preset-btn active" data-mode="increment" data-base="15" data-inc="5" data-step="60">⏳ 15p + 5s (60s)</button>
+                    <button class="timer-preset-btn" data-mode="increment" data-base="10" data-inc="5" data-step="90">⏱️ 10p + 5s (90s)</button>
+                    <button class="timer-preset-btn" data-mode="increment" data-base="5" data-inc="3" data-step="45">⚡ 5p + 3s (45s)</button>
+                    <button class="timer-preset-btn" data-mode="per_move" data-move="90" data-step="90">🎯 1p30s/nước</button>
+                    <button class="timer-preset-btn" data-mode="per_move" data-move="60" data-step="60">🎯 1p/nước</button>
+                    <button class="timer-preset-btn" data-mode="none" data-base="0" data-inc="0" data-step="0">♾️ Tắt đồng hồ</button>
                 </div>
 
                 <div style="border-top: 1px solid #e2e8f0; margin-top: 4px; padding-top: 8px;">
@@ -1070,19 +1070,31 @@
                             <option value="none">Không giới hạn (Tắt đồng hồ)</option>
                         </select>
                     </div>
-                    <div id="timer-custom-increment-group" style="display: flex; gap: 8px; align-items: center;">
-                        <div style="flex: 1;">
-                            <span style="font-size: 11px; color: #64748b;">Thời gian chính:</span>
-                            <div style="display: flex; align-items: center; gap: 3px;">
-                                <input type="number" id="timer-input-base" min="1" max="180" value="10" style="width: 100%; padding: 4px 6px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 13px; font-weight: bold;">
-                                <span style="font-size: 11px;">phút</span>
+                    <div id="timer-custom-increment-group" style="display: flex; flex-direction: column; gap: 8px;">
+                        <div style="display: flex; gap: 8px; align-items: center;">
+                            <div style="flex: 1;">
+                                <span style="font-size: 11px; color: #64748b;">Thời gian chính:</span>
+                                <div style="display: flex; align-items: center; gap: 3px;">
+                                    <input type="number" id="timer-input-base" min="1" max="180" value="15" style="width: 100%; padding: 4px 6px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 13px; font-weight: bold;">
+                                    <span style="font-size: 11px;">phút</span>
+                                </div>
+                            </div>
+                            <div style="flex: 1;">
+                                <span style="font-size: 11px; color: #64748b;">Tích lũy/nước:</span>
+                                <div style="display: flex; align-items: center; gap: 3px;">
+                                    <input type="number" id="timer-input-inc" min="0" max="60" value="5" style="width: 100%; padding: 4px 6px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 13px; font-weight: bold;">
+                                    <span style="font-size: 11px;">giây</span>
+                                </div>
                             </div>
                         </div>
-                        <div style="flex: 1;">
-                            <span style="font-size: 11px; color: #64748b;">Tích lũy/nước:</span>
-                            <div style="display: flex; align-items: center; gap: 3px;">
-                                <input type="number" id="timer-input-inc" min="0" max="60" value="5" style="width: 100%; padding: 4px 6px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 13px; font-weight: bold;">
-                                <span style="font-size: 11px;">giây</span>
+                        <div style="display: flex; align-items: center; justify-content: space-between; background: #f8fafc; padding: 6px 8px; border-radius: 6px; border: 1px solid #e2e8f0;">
+                            <div>
+                                <div style="font-size: 11.5px; font-weight: bold; color: #334155;">⏱️ Giới hạn 1 nước:</div>
+                                <div style="font-size: 10px; color: #64748b;">(0 = Không giới hạn giây)</div>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 4px;">
+                                <input type="number" id="timer-input-step" min="0" max="600" step="5" value="60" style="width: 65px; padding: 4px 6px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 13px; font-weight: bold; text-align: center;">
+                                <span style="font-size: 11px; font-weight: 600; color: #475569;">giây</span>
                             </div>
                         </div>
                     </div>

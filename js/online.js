@@ -147,6 +147,7 @@ export function updateClocksTick() {
 
     let currentRedMs = timer.redTimeMs;
     let currentBlackMs = timer.blackTimeMs;
+    let stepRemainSec = null;
 
     if (timer.isRunning && timer.lastTick && timer.activeSide) {
         const elapsed = Date.now() - timer.lastTick;
@@ -154,6 +155,11 @@ export function updateClocksTick() {
             currentRedMs = Math.max(0, timer.redTimeMs - elapsed);
         } else if (timer.activeSide === 'b') {
             currentBlackMs = Math.max(0, timer.blackTimeMs - elapsed);
+        }
+
+        const stepLimitSec = timer.mode === 'per_move' ? (timer.moveLimitSeconds || 60) : (timer.stepSeconds || 0);
+        if (stepLimitSec > 0) {
+            stepRemainSec = Math.max(0, Math.ceil((stepLimitSec * 1000 - elapsed) / 1000));
         }
     }
 
@@ -165,14 +171,31 @@ export function updateClocksTick() {
     const isBottomActive = timer.isRunning && ((isBottomRed && timer.activeSide === 'w') || (!isBottomRed && timer.activeSide === 'b'));
     const isTopActive = timer.isRunning && ((!isBottomRed && timer.activeSide === 'w') || (isBottomRed && timer.activeSide === 'b'));
 
+    function renderClockText(totalMs, isActive) {
+        if (timer.mode === 'per_move') {
+            if (isActive && stepRemainSec !== null) {
+                return `${stepRemainSec}s`;
+            }
+            return `${timer.moveLimitSeconds || 60}s`;
+        }
+        // mode === 'increment'
+        const baseStr = formatClockTime(totalMs);
+        if (isActive && stepRemainSec !== null && timer.stepSeconds > 0) {
+            return `${baseStr} (${stepRemainSec}s)`;
+        }
+        return baseStr;
+    }
+
     if (botClock) {
-        botClock.textContent = formatClockTime(bottomMs);
-        botClock.className = 'online-digital-clock' + (isBottomActive ? ' clock-active' : '') + (bottomMs <= 30000 && timer.isRunning ? ' time-warning' : '');
+        botClock.textContent = renderClockText(bottomMs, isBottomActive);
+        const isWarning = timer.isRunning && (bottomMs <= 30000 || (isBottomActive && stepRemainSec !== null && stepRemainSec <= 10));
+        botClock.className = 'online-digital-clock' + (isBottomActive ? ' clock-active' : '') + (isWarning ? ' time-warning' : '');
     }
 
     if (topClock) {
-        topClock.textContent = formatClockTime(topMs);
-        topClock.className = 'online-digital-clock' + (isTopActive ? ' clock-active' : '') + (topMs <= 30000 && timer.isRunning ? ' time-warning' : '');
+        topClock.textContent = renderClockText(topMs, isTopActive);
+        const isWarning = timer.isRunning && (topMs <= 30000 || (isTopActive && stepRemainSec !== null && stepRemainSec <= 10));
+        topClock.className = 'online-digital-clock' + (isTopActive ? ' clock-active' : '') + (isWarning ? ' time-warning' : '');
     }
 }
 

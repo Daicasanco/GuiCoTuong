@@ -369,11 +369,12 @@ function getDefaultTimer() {
     return {
         enabled: false,
         mode: 'none', // 'none' | 'increment' | 'per_move'
-        baseMinutes: 10,
+        baseMinutes: 15,
         incSeconds: 5,
-        moveLimitSeconds: 90,
-        redTimeMs: 10 * 60 * 1000,
-        blackTimeMs: 10 * 60 * 1000,
+        moveLimitSeconds: 60,
+        stepSeconds: 60,
+        redTimeMs: 15 * 60 * 1000,
+        blackTimeMs: 15 * 60 * 1000,
         activeSide: null, // 'w' | 'b'
         isRunning: false,
         lastTick: null
@@ -492,21 +493,35 @@ setInterval(() => {
 
         const elapsed = now - room.timer.lastTick;
         let timeoutOccurred = false;
+        let timeoutReason = '';
         let loserSide = null;
 
-        if (room.timer.activeSide === 'w') {
-            const remaining = room.timer.redTimeMs - elapsed;
-            if (remaining <= 0) {
-                room.timer.redTimeMs = 0;
-                timeoutOccurred = true;
-                loserSide = 'red';
-            }
-        } else if (room.timer.activeSide === 'b') {
-            const remaining = room.timer.blackTimeMs - elapsed;
-            if (remaining <= 0) {
-                room.timer.blackTimeMs = 0;
-                timeoutOccurred = true;
-                loserSide = 'black';
+        // 1. Kiểm tra giới hạn thời gian cho 1 nước đi (nếu có bật stepSeconds > 0 hoặc chế độ per_move)
+        const stepLimitSec = room.timer.mode === 'per_move' ? (room.timer.moveLimitSeconds || 60) : (room.timer.stepSeconds || 0);
+        if (stepLimitSec > 0 && elapsed >= stepLimitSec * 1000) {
+            timeoutOccurred = true;
+            loserSide = room.timer.activeSide === 'w' ? 'red' : 'black';
+            timeoutReason = `quá thời gian suy nghĩ 1 nước (${stepLimitSec} giây)`;
+        }
+
+        // 2. Kiểm tra tổng thời gian chính của ván cờ (nếu chưa bị xử thua nước đi)
+        if (!timeoutOccurred && room.timer.mode === 'increment') {
+            if (room.timer.activeSide === 'w') {
+                const remaining = room.timer.redTimeMs - elapsed;
+                if (remaining <= 0) {
+                    room.timer.redTimeMs = 0;
+                    timeoutOccurred = true;
+                    loserSide = 'red';
+                    timeoutReason = 'hết tổng thời gian chính của ván đấu';
+                }
+            } else if (room.timer.activeSide === 'b') {
+                const remaining = room.timer.blackTimeMs - elapsed;
+                if (remaining <= 0) {
+                    room.timer.blackTimeMs = 0;
+                    timeoutOccurred = true;
+                    loserSide = 'black';
+                    timeoutReason = 'hết tổng thời gian chính của ván đấu';
+                }
             }
         }
 
@@ -521,7 +536,7 @@ setInterval(() => {
                 ? (room.host.color === 'red' ? room.host.userName : room.guest?.userName || 'Bên Đỏ')
                 : (room.host.color === 'black' ? room.host.userName : room.guest?.userName || 'Bên Đen');
 
-            console.log(`⏰ [Online] Hết giờ phòng [${code}]: ${loserName} (${loserSide}) thua, ${winnerName} (${winnerSide}) thắng!`);
+            console.log(`⏰ [Online] Hết giờ phòng [${code}]: ${loserName} (${loserSide}) thua do ${timeoutReason}, ${winnerName} (${winnerSide}) thắng!`);
 
             const timeoutMsg = {
                 type: 'GAME_TIMEOUT',
@@ -529,16 +544,19 @@ setInterval(() => {
                 winnerSide,
                 loserName,
                 winnerName,
+                timeoutReason,
                 timer: {
                     enabled: room.timer.enabled,
                     mode: room.timer.mode,
+                    stepSeconds: room.timer.stepSeconds,
+                    moveLimitSeconds: room.timer.moveLimitSeconds,
                     redTimeMs: room.timer.redTimeMs,
                     blackTimeMs: room.timer.blackTimeMs,
                     activeSide: null,
                     isRunning: false,
                     lastTick: null
                 },
-                message: `⏰ HẾT GIỜ! ${loserName} (${loserSide === 'red' ? 'Đỏ' : 'Đen'}) đã hết thời gian thi đấu. ${winnerName} giành chiến thắng!`
+                message: `⏰ HẾT GIỜ! ${loserName} (${loserSide === 'red' ? 'Đỏ' : 'Đen'}) bị xử thua do ${timeoutReason}. ${winnerName} giành chiến thắng!`
             };
             broadcastToRoom(room, timeoutMsg);
         }
@@ -1031,9 +1049,13 @@ wss.on('connection', (ws) => {
             const mode = s.mode || 'none';
             // enabled là true nếu mode là 'increment' hoặc 'per_move', và s.enabled không phải là false
             const enabled = (mode !== 'none') && (s.enabled !== undefined ? !!s.enabled : true);
-            const baseMinutes = Math.max(1, Math.min(180, Number(s.baseMinutes) || 10));
+            const baseMinutes = Math.max(1, Math.min(180, Number(s.baseMinutes) || 15));
             const incSeconds = Math.max(0, Math.min(60, Number(s.incSeconds !== undefined ? s.incSeconds : s.incrementSeconds) || 0));
-            const moveLimitSeconds = Math.max(10, Math.min(600, Number(s.moveLimitSeconds !== undefined ? s.moveLimitSeconds : s.perMoveSeconds) || 90));
+            const moveLimitSeconds = Math.max(10, Math.min(600, Number(s.moveLimitSeconds !== undefined ? s.moveLimitSeconds : s.perMoveSeconds) || 60));
+            let stepSeconds = Math.max(0, Math.min(600, Number(s.stepSeconds !== undefined ? s.stepSeconds : s.stepLimitSeconds) || 0));
+            if (mode === 'per_move') {
+                stepSeconds = moveLimitSeconds;
+            }
 
             room.timer = {
                 enabled,
@@ -1041,6 +1063,7 @@ wss.on('connection', (ws) => {
                 baseMinutes,
                 incSeconds,
                 moveLimitSeconds,
+                stepSeconds,
                 redTimeMs: mode === 'per_move' ? moveLimitSeconds * 1000 : baseMinutes * 60 * 1000,
                 blackTimeMs: mode === 'per_move' ? moveLimitSeconds * 1000 : baseMinutes * 60 * 1000,
                 activeSide: null,
@@ -1048,12 +1071,16 @@ wss.on('connection', (ws) => {
                 lastTick: null
             };
 
-            console.log(`⏱️ [Online] Chủ phòng [${roomCode}] thiết lập đồng hồ: ${mode} (${baseMinutes}p + ${incSeconds}s / ${moveLimitSeconds}s, enabled: ${enabled})`);
+            console.log(`⏱️ [Online] Chủ phòng [${roomCode}] thiết lập đồng hồ: ${mode} (${baseMinutes}p + ${incSeconds}s / ${stepSeconds}s/nước, enabled: ${enabled})`);
 
             let desc = 'Tắt đồng hồ';
             if (enabled) {
-                if (mode === 'increment') desc = `${baseMinutes} phút + ${incSeconds}s tích lũy`;
-                else if (mode === 'per_move') desc = `${moveLimitSeconds} giây mỗi nước`;
+                if (mode === 'increment') {
+                    desc = `${baseMinutes} phút + ${incSeconds}s`;
+                    if (stepSeconds > 0) desc += ` (giới hạn ${stepSeconds}s/nước)`;
+                } else if (mode === 'per_move') {
+                    desc = `${moveLimitSeconds} giây mỗi nước`;
+                }
             }
 
             broadcastToRoom(room, {

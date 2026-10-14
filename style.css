@@ -332,19 +332,47 @@ body.edit-mode #piece-palette-pc .palette-turn-toggle {
     flex-shrink: 0;
 }
 
-/* TRÊN MOBILE (MÀN HÌNH DỌC) */
+/* TRÊN MOBILE (MÀN HÌNH DỌC) - TỐI ƯU CUỘN VÔ CỰC MƯỢT MÀ */
 @media (max-aspect-ratio: 1/1), (max-width: 768px) {
+    html, body {
+        position: static !important;
+        height: auto !important;
+        min-height: 100% !important;
+        overflow-x: hidden !important;
+        overflow-y: auto !important;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    #app-container {
+        height: auto !important;
+        min-height: 100dvh;
+        overflow: visible !important;
+        display: flex;
+        flex-direction: column;
+    }
+
+    #toolbar {
+        position: sticky;
+        top: 0;
+        z-index: 100;
+        height: 44px;
+        flex-shrink: 0;
+    }
+
     #main-content { 
+        flex: none !important;
+        height: auto !important;
+        min-height: 0;
         flex-direction: column; 
-        padding: 2px 4px 4px 4px;
-        gap: 3px;
-        overflow: hidden;
+        padding: 4px 6px 60px 6px;
+        gap: 6px;
+        overflow: visible !important;
     }
     
     #board-section { 
         max-width: 100%; 
         width: 100%; 
-        height: auto; 
+        height: auto !important; 
         justify-content: flex-start;
         flex-shrink: 0;
     } 
@@ -361,28 +389,43 @@ body.edit-mode #piece-palette-pc .palette-turn-toggle {
     
     #chess-board-area { 
         width: 100%; 
-        max-width: none;
+        max-width: 100%; 
         aspect-ratio: 380 / 420; 
         margin-bottom: 2px;
     } 
     #nav-bar {
-        max-width: none;
-        height: 30px;
+        max-width: 100%;
+        height: 32px;
+        margin-bottom: 4px;
     }
     
     .arrow-text {
         font-size: clamp(9px, 2.5vw, 12px) !important;
     }
 
-    /* BỐ CỤC DỌC KHOA HỌC CHO PHẦN ĐIỀU KHIỂN DƯỚI BÀN CỜ */
+    /* BỐ CỤC DỌC KHOA HỌC CHO PHẦN ĐIỀU KHIỂN DƯỚI BÀN CỜ - CHO PHÉP CUỘN TỰ DO */
     #info-section { 
-        flex: 1; 
+        flex: none !important; 
         display: flex;
-        flex-direction: column !important; /* XẾP DỌC THỐNG NHẤT */
-        min-height: 0;
+        flex-direction: column !important;
+        min-height: 380px;
+        height: auto !important;
         width: 100%;
-        gap: 3px;
-        overflow: hidden;
+        gap: 6px;
+        overflow: visible !important;
+        margin-bottom: 30px;
+    }
+
+    .panel-box {
+        height: auto !important;
+        min-height: 280px;
+        overflow: visible !important;
+    }
+
+    #move-list-container {
+        max-height: 360px;
+        overflow-y: auto !important;
+        -webkit-overflow-scrolling: touch;
     }
 
     #panel-ai { 
@@ -2263,17 +2306,18 @@ body:not(.mode-online) #online-room-bar {
     background: #090d16;
     color: #4ade80;
     font-family: 'Courier New', Courier, monospace;
-    font-size: 18px;
+    font-size: 15px;
     font-weight: 900;
-    padding: 3px 8px;
+    padding: 3px 6px;
     border-radius: 6px;
     border: 1.5px solid #334155;
-    letter-spacing: 1px;
+    letter-spacing: 0.5px;
     box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.6);
     user-select: none;
-    min-width: 68px;
+    min-width: 65px;
     text-align: center;
     transition: all 0.2s ease;
+    white-space: nowrap;
 }
 
 .online-digital-clock.clock-active {
