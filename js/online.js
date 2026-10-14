@@ -717,6 +717,7 @@ async function enterOnlineGame(initialFen, myColor) {
     await initGame(initialFen || START_FEN, false);
     updateOnlineRoomBar();
     updatePlayerStripsUI();
+    window.dispatchEvent(new Event('resize'));
 }
 
 // Tạo phòng mới
@@ -959,6 +960,7 @@ export function leaveOnlineRoom() {
     });
 
     updateOnlineRoomBar();
+    window.dispatchEvent(new Event('resize'));
 }
 
 // Cập nhật thanh hiển thị trạng thái phòng Online trên màn hình

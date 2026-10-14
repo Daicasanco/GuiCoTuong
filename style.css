@@ -1831,13 +1831,17 @@ body.studio-recording #studio-top-bar {
     border-color: #94a3b8;
 }
 
-/* KHI Ở CHẾ ĐỘ ONLINE (body.mode-online): BÀN CỜ VẪN GIỮ KÍCH THƯỚC ĐẦY ĐỦ VÌ THANH PHÒNG NẰM BÊN PHẢI */
+/* KHI Ở CHẾ ĐỘ ONLINE (body.mode-online): TÍNH TOÁN KÍCH THƯỚC BÀN CỜ VÀ DẢI PLAYER STRIP ĐỂ VỪA VẶN MÀN HÌNH */
 body.mode-online #board-section {
-    width: calc((100dvh - 110px) * (380 / 420));
+    width: calc((100dvh - 175px) * (380 / 420));
     max-width: 100%;
 }
 body.mode-online #chess-board-area {
-    max-width: calc((100dvh - 110px) * (380 / 420));
+    max-width: calc((100dvh - 175px) * (380 / 420));
+    margin-bottom: 2px;
+}
+body.mode-online .online-player-strip {
+    max-width: calc((100dvh - 175px) * (380 / 420));
 }
 
 @media (max-aspect-ratio: 1/1), (max-width: 768px) {
@@ -2139,17 +2143,17 @@ body.mode-online .online-user-name:hover {
    ========================================================= */
 .online-player-strip {
     width: 100%;
-    max-width: calc((100dvh - 100px) * (380 / 420));
-    height: 44px;
+    max-width: calc((100dvh - 175px) * (380 / 420));
+    height: 38px;
     background: #ffffff;
     border: 1px solid #cbd5e1;
     border-radius: 8px;
-    padding: 3px 8px;
+    padding: 2px 8px;
     box-sizing: border-box;
     display: none;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: 4px;
+    margin-bottom: 3px;
     box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
     flex-shrink: 0;
     transition: border-color 0.2s, box-shadow 0.2s;
@@ -2170,7 +2174,7 @@ body:not(.mode-online) #online-room-bar {
 
 #online-player-strip-bottom {
     margin-top: 2px;
-    margin-bottom: 4px;
+    margin-bottom: 2px;
 }
 
 .online-strip-left {
@@ -2183,8 +2187,8 @@ body:not(.mode-online) #online-room-bar {
 
 /* Khung Camera WebRTC */
 .online-cam-wrapper {
-    width: 58px;
-    height: 38px;
+    width: 52px;
+    height: 34px;
     background: #0f172a;
     border-radius: 6px;
     overflow: hidden;
