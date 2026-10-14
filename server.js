@@ -1344,9 +1344,10 @@ wss.on('connection', (ws) => {
 
             // Gắn thông tin người gửi
             data.fromUserId = ws.userId;
+            data.fromUserName = ws.userName || (ws.isHost ? 'Chủ phòng' : (ws.isSpectator ? 'Khán giả' : 'Khách'));
             data.fromRole = ws.isHost ? 'host' : (ws.isSpectator ? 'spectator' : 'guest');
 
-            // Nếu có chỉ định targetUserId -> gửi tới đích
+            // Nếu có chỉ định targetUserId -> gửi trực tiếp tới đích (Full Mesh P2P signaling)
             if (data.targetUserId) {
                 let targetWs = null;
                 if (room.host && room.host.userId === data.targetUserId) targetWs = room.host.ws;
@@ -1359,15 +1360,16 @@ wss.on('connection', (ws) => {
                 return;
             }
 
-            // Mặc định relay giữa Chủ phòng và Khách đấu
-            if (type === 'CAMERA_STATUS') {
-                // Broadcast trạng thái camera tới toàn phòng để khán giả cũng thấy avatar/trạng thái
-                broadcastToRoom(room, data);
-            } else {
-                const opponent = ws.isHost ? room.guest : room.host;
-                if (opponent && opponent.ws && opponent.ws.readyState === 1) {
-                    opponent.ws.send(JSON.stringify(data));
-                }
+            // Broadcast trạng thái Mic hoặc Camera tới toàn bộ thành viên khác trong phòng (bao gồm khán giả)
+            if (type === 'CAMERA_STATUS' || type === 'VOICE_STATUS') {
+                broadcastToRoom(room, data, ws);
+                return;
+            }
+
+            // Mặc định relay giữa Chủ phòng và Khách đấu (fallback)
+            const opponent = ws.isHost ? room.guest : room.host;
+            if (opponent && opponent.ws && opponent.ws.readyState === 1) {
+                opponent.ws.send(JSON.stringify(data));
             }
             return;
         }
