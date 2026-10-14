@@ -221,19 +221,26 @@
             <section id="board-section">
                 <!-- THANH TRẠNG THÁI PHÒNG ONLINE -->
                 <div id="online-room-bar" style="display: none;">
-                    <div class="online-bar-top">
+                    <!-- HÀNG 1: THÔNG TIN PHÒNG VÀ NÚT RỜI -->
+                    <div class="online-bar-header">
                         <div class="online-room-tag" id="btn-copy-roomcode" title="Bấm để sao chép mã và link mời">
                             <span>Phòng:</span> <strong id="online-bar-roomcode">------</strong> 📋
                         </div>
                         <div class="online-role-badge">
                             <span id="online-bar-role">Chủ phòng</span> • <span id="online-bar-myside">🔴 Đỏ</span> • <span id="online-bar-oppstatus">⏳ Đang chờ...</span>
                         </div>
+                        <button class="btn-online-leave-top" id="btn-online-leave" title="Rời khỏi phòng">🚪 Rời</button>
+                    </div>
+
+                    <!-- HÀNG 2: BÁO LƯỢT ĐI VÀ CÔNG CỤ (MIC + CHAT) -->
+                    <div class="online-bar-actions">
                         <div class="online-turn-badge" id="online-bar-turn">
                             👉 TỚI LƯỢT BẠN
                         </div>
-                        <button class="btn-online-tool" id="btn-online-mic" title="Bật/Tắt Microphone đàm thoại giọng nói">🎙️ Mic: Tắt</button>
-                        <button class="btn-online-tool" id="btn-online-chat" title="Mở hộp tin nhắn trò chuyện">💬 Chat <span id="online-chat-badge" class="chat-badge" style="display: none;">0</span></button>
-                        <button class="btn-online-leave-top" id="btn-online-leave" title="Rời khỏi phòng">🚪 Rời</button>
+                        <div class="online-tools-group">
+                            <button class="btn-online-tool" id="btn-online-mic" title="Bật/Tắt Microphone đàm thoại giọng nói">🎙️ Mic: Tắt</button>
+                            <button class="btn-online-tool" id="btn-online-chat" title="Mở hộp tin nhắn trò chuyện">💬 Chat <span id="online-chat-badge" class="chat-badge" style="display: none;">0</span></button>
+                        </div>
                     </div>
 
                     <!-- HỘP THOẠI TRÒ CHUYỆN ONLINE -->

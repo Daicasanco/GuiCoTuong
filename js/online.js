@@ -375,6 +375,10 @@ async function enterOnlineGame(initialFen, myColor) {
     // Tự động xoay bàn cờ: nếu cầm Đen thì xoay để quân Đen ở dưới
     state.isBoardFlipped = (myColor === 'black');
 
+    // Tự động chuyển tab dưới sang Biên Bản
+    const historyTabBtn = document.querySelector('.lower-tab-btn[data-tab="history"]');
+    if (historyTabBtn) historyTabBtn.click();
+
     await initGame(initialFen || START_FEN, false);
     updateOnlineRoomBar();
 }
