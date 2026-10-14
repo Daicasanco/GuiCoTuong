@@ -27,6 +27,11 @@ window.onload = async () => {
         // Truyền tham số thứ 2 là 'true' để hệ thống bóc LocalStorage ra dùng
         initGame(undefined, true);
         
+        // Kiểm tra và khôi phục phòng online nếu vừa F5 hoặc kết nối lại
+        import('./js/online.js').then(m => {
+            if (m.checkAndResumeSavedRoom) m.checkAndResumeSavedRoom();
+        });
+
         // Lấy thông tin phiên bản từ file Service Worker để in ra Cài đặt
         fetchAppVersion();
 

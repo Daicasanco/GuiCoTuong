@@ -12,7 +12,7 @@ import { uploadLocalBook, deleteLocalBook, loadLocalBookFromDB } from './localbo
 import { renderEvalGraph } from './analysis/eval-graph.js';
 import { runAutoGameReview } from './analysis/auto-review.js';
 import { runAIAnnotation } from './analysis/ai-annotate.js';
-import { createOnlineRoom, joinOnlineRoom, leaveOnlineRoom, sendHostSetTurn, sendHostSwapSides, sendResetGame, updateOnlineRoomBar, onlineState } from './online.js';
+import { createOnlineRoom, joinOnlineRoom, leaveOnlineRoom, sendHostSetTurn, sendHostSwapSides, sendResetGame, updateOnlineRoomBar, onlineState, toggleOnlineVoiceMic, sendOnlineChat, toggleChatBox } from './online.js';
 
 let pendingDeletePuzKey = "";
 
@@ -2606,6 +2606,14 @@ function initOnlineEvents() {
         };
     }
 
+    // 2.1. Nút Vào Nhanh Phòng Cố Định 013579
+    const btnQuickJoinFixed = document.getElementById('btn-quick-join-fixed');
+    if (btnQuickJoinFixed) {
+        btnQuickJoinFixed.onclick = async () => {
+            await joinOnlineRoom('013579');
+        };
+    }
+
     // 3. Nút Tạo Phòng
     const btnDoCreateRoom = document.getElementById('btn-do-create-room');
     if (btnDoCreateRoom) {
@@ -2653,7 +2661,54 @@ function initOnlineEvents() {
         };
     }
 
-    // 7. Rời phòng
+    // 7. Bật / Tắt Microphone đàm thoại giọng nói WebRTC
+    const btnOnlineMic = document.getElementById('btn-online-mic');
+    if (btnOnlineMic) {
+        btnOnlineMic.onclick = async () => {
+            await toggleOnlineVoiceMic();
+        };
+    }
+
+    // 8. Bật / Tắt Hộp Chat trực tiếp
+    const btnOnlineChat = document.getElementById('btn-online-chat');
+    if (btnOnlineChat) {
+        btnOnlineChat.onclick = () => {
+            toggleChatBox();
+        };
+    }
+    const btnCloseChat = document.getElementById('btn-close-chat');
+    if (btnCloseChat) {
+        btnCloseChat.onclick = () => {
+            toggleChatBox(false);
+        };
+    }
+
+    // Form gửi tin nhắn Chat
+    const chatForm = document.getElementById('online-chat-form');
+    const chatInput = document.getElementById('online-chat-input');
+    if (chatForm && chatInput) {
+        chatForm.onsubmit = (e) => {
+            e.preventDefault();
+            const text = chatInput.value.trim();
+            if (text) {
+                sendOnlineChat(text);
+                chatInput.value = '';
+            }
+        };
+    }
+
+    // Các thẻ câu chat nhanh (Chips)
+    const chatChips = document.querySelectorAll('.chat-chip');
+    chatChips.forEach(chip => {
+        chip.onclick = () => {
+            const msg = chip.getAttribute('data-msg');
+            if (msg) {
+                sendOnlineChat(msg);
+            }
+        };
+    });
+
+    // 9. Rời phòng
     const btnOnlineLeave = document.getElementById('btn-online-leave');
     if (btnOnlineLeave) {
         btnOnlineLeave.onclick = () => {
@@ -2663,7 +2718,7 @@ function initOnlineEvents() {
         };
     }
 
-    // 8. Quyền của Chủ phòng: Đổi Lượt Đi
+    // 10. Quyền của Chủ phòng: Đổi Lượt Đi
     const btnOnlineSetTurn = document.getElementById('btn-online-set-turn');
     if (btnOnlineSetTurn) {
         btnOnlineSetTurn.onclick = () => {
@@ -2677,7 +2732,7 @@ function initOnlineEvents() {
         };
     }
 
-    // 9. Quyền của Chủ phòng: Đổi Bên (Đỏ <-> Đen)
+    // 11. Quyền của Chủ phòng: Đổi Bên (Đỏ <-> Đen)
     const btnOnlineSwap = document.getElementById('btn-online-swap');
     if (btnOnlineSwap) {
         btnOnlineSwap.onclick = () => {
@@ -2689,7 +2744,7 @@ function initOnlineEvents() {
         };
     }
 
-    // 10. Quyền của Chủ phòng: Ván Mới
+    // 12. Quyền của Chủ phòng: Ván Mới
     const btnOnlineReset = document.getElementById('btn-online-reset');
     if (btnOnlineReset) {
         btnOnlineReset.onclick = () => {
@@ -2701,7 +2756,7 @@ function initOnlineEvents() {
         };
     }
 
-    // 12. Kiểm tra nếu người dùng vào web qua link chia sẻ (?room=XXXXXX)
+    // 13. Kiểm tra nếu người dùng vào web qua link chia sẻ (?room=XXXXXX)
     try {
         const urlParams = new URLSearchParams(window.location.search);
         const roomFromUrl = urlParams.get('room');
