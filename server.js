@@ -364,6 +364,22 @@ const RECONNECT_GRACE_MS = 90000; // 90 giây chờ kết nối lại nếu rớ
 
 const rooms = new Map(); // roomCode -> Room State
 
+// Khởi tạo timer mặc định
+function getDefaultTimer() {
+    return {
+        enabled: false,
+        mode: 'none', // 'none' | 'increment' | 'per_move'
+        baseMinutes: 10,
+        incSeconds: 5,
+        moveLimitSeconds: 90,
+        redTimeMs: 10 * 60 * 1000,
+        blackTimeMs: 10 * 60 * 1000,
+        activeSide: null, // 'w' | 'b'
+        isRunning: false,
+        lastTick: null
+    };
+}
+
 // Khởi tạo hoặc lấy phòng cố định 013579
 function getOrCreateFixedRoom() {
     let room = rooms.get(FIXED_ROOM_CODE);
@@ -377,6 +393,8 @@ function getOrCreateFixedRoom() {
             guestColor: 'black',
             fen: DEFAULT_XIANGQI_FEN,
             currentTurn: 'w',
+            timer: getDefaultTimer(),
+            spectators: new Map(), // userId -> { ws, userId, userName, connected }
             createdAt: Date.now()
         };
         rooms.set(FIXED_ROOM_CODE, room);
@@ -395,6 +413,50 @@ function generateRoomCode() {
     return code;
 }
 
+// Helper gửi tin nhắn tới tất cả thành viên trong phòng (Host, Guest, Spectators)
+function broadcastToRoom(room, messageObj, excludeWs = null) {
+    if (!room) return;
+    const msgStr = typeof messageObj === 'string' ? messageObj : JSON.stringify(messageObj);
+
+    if (room.host && room.host.ws && room.host.ws.readyState === 1 && room.host.ws !== excludeWs) {
+        try { room.host.ws.send(msgStr); } catch (e) {}
+    }
+    if (room.guest && room.guest.ws && room.guest.ws.readyState === 1 && room.guest.ws !== excludeWs) {
+        try { room.guest.ws.send(msgStr); } catch (e) {}
+    }
+    if (room.spectators) {
+        room.spectators.forEach((spec) => {
+            if (spec.ws && spec.ws.readyState === 1 && spec.ws !== excludeWs) {
+                try { spec.ws.send(msgStr); } catch (e) {}
+            }
+        });
+    }
+}
+
+// Helper thông báo danh sách kỳ thủ & khán giả cập nhật
+function broadcastPlayersUpdated(room) {
+    if (!room) return;
+    const specsList = [];
+    if (room.spectators) {
+        room.spectators.forEach((spec) => {
+            specsList.push({
+                userId: spec.userId,
+                userName: spec.userName,
+                connected: spec.connected
+            });
+        });
+    }
+
+    const payload = {
+        type: 'ROOM_PLAYERS_UPDATED',
+        host: room.host ? { userId: room.host.userId, userName: room.host.userName, color: room.host.color, connected: room.host.connected } : null,
+        guest: room.guest ? { userId: room.guest.userId, userName: room.guest.userName, color: room.guest.color, connected: room.guest.connected } : null,
+        spectators: specsList,
+        spectatorCount: specsList.length
+    };
+    broadcastToRoom(room, payload);
+}
+
 // Dọn dẹp phòng cũ sau mỗi 30 phút (trừ phòng cố định 013579)
 setInterval(() => {
     const now = Date.now();
@@ -402,7 +464,8 @@ setInterval(() => {
         if (room.isPermanent) continue;
         const isHostAlive = room.host && room.host.ws && room.host.ws.readyState === 1;
         const isGuestAlive = room.guest && room.guest.ws && room.guest.ws.readyState === 1;
-        if (!isHostAlive && !isGuestAlive && !room.host?.disconnectTimer && !room.guest?.disconnectTimer) {
+        const hasSpectators = room.spectators && room.spectators.size > 0;
+        if (!isHostAlive && !isGuestAlive && !hasSpectators && !room.host?.disconnectTimer && !room.guest?.disconnectTimer) {
             rooms.delete(code);
         } else if (now - room.createdAt > 8 * 60 * 60 * 1000) {
             rooms.delete(code);
@@ -418,6 +481,69 @@ setInterval(() => {
         try { ws.ping(); } catch (e) {}
     });
 }, 30000);
+
+// Timer Tick Checker: Đếm ngược thời gian và xử lý Hết Giờ (Timeout)
+setInterval(() => {
+    const now = Date.now();
+    for (const [code, room] of rooms.entries()) {
+        if (!room.timer || !room.timer.enabled || !room.timer.isRunning || !room.timer.lastTick || !room.timer.activeSide) {
+            continue;
+        }
+
+        const elapsed = now - room.timer.lastTick;
+        let timeoutOccurred = false;
+        let loserSide = null;
+
+        if (room.timer.activeSide === 'w') {
+            const remaining = room.timer.redTimeMs - elapsed;
+            if (remaining <= 0) {
+                room.timer.redTimeMs = 0;
+                timeoutOccurred = true;
+                loserSide = 'red';
+            }
+        } else if (room.timer.activeSide === 'b') {
+            const remaining = room.timer.blackTimeMs - elapsed;
+            if (remaining <= 0) {
+                room.timer.blackTimeMs = 0;
+                timeoutOccurred = true;
+                loserSide = 'black';
+            }
+        }
+
+        if (timeoutOccurred) {
+            room.timer.isRunning = false;
+            room.timer.lastTick = null;
+            const winnerSide = loserSide === 'red' ? 'black' : 'red';
+            const loserName = loserSide === 'red'
+                ? (room.host.color === 'red' ? room.host.userName : room.guest?.userName || 'Bên Đỏ')
+                : (room.host.color === 'black' ? room.host.userName : room.guest?.userName || 'Bên Đen');
+            const winnerName = winnerSide === 'red'
+                ? (room.host.color === 'red' ? room.host.userName : room.guest?.userName || 'Bên Đỏ')
+                : (room.host.color === 'black' ? room.host.userName : room.guest?.userName || 'Bên Đen');
+
+            console.log(`⏰ [Online] Hết giờ phòng [${code}]: ${loserName} (${loserSide}) thua, ${winnerName} (${winnerSide}) thắng!`);
+
+            const timeoutMsg = {
+                type: 'GAME_TIMEOUT',
+                loserSide,
+                winnerSide,
+                loserName,
+                winnerName,
+                timer: {
+                    enabled: room.timer.enabled,
+                    mode: room.timer.mode,
+                    redTimeMs: room.timer.redTimeMs,
+                    blackTimeMs: room.timer.blackTimeMs,
+                    activeSide: null,
+                    isRunning: false,
+                    lastTick: null
+                },
+                message: `⏰ HẾT GIỜ! ${loserName} (${loserSide === 'red' ? 'Đỏ' : 'Đen'}) đã hết thời gian thi đấu. ${winnerName} giành chiến thắng!`
+            };
+            broadcastToRoom(room, timeoutMsg);
+        }
+    }
+}, 500);
 
 wss.on('connection', (ws) => {
     ws.isAlive = true;
@@ -452,12 +578,15 @@ wss.on('connection', (ws) => {
                 guestColor: guestColor,
                 fen: fen,
                 currentTurn: currentTurn,
+                timer: getDefaultTimer(),
+                spectators: new Map(),
                 createdAt: Date.now()
             };
 
             rooms.set(roomCode, room);
             ws.roomCode = roomCode;
             ws.isHost = true;
+            ws.isSpectator = false;
             ws.userId = userId;
             ws.userName = hostName;
 
@@ -470,7 +599,9 @@ wss.on('connection', (ws) => {
                 myUserName: hostName,
                 guestColor,
                 fen,
-                currentTurn
+                currentTurn,
+                timer: room.timer,
+                spectatorCount: 0
             }));
             return;
         }
@@ -504,6 +635,7 @@ wss.on('connection', (ws) => {
                     room.host.connected = true;
                     ws.roomCode = roomCode;
                     ws.isHost = true;
+                    ws.isSpectator = false;
                     ws.userId = userId;
                     ws.userName = room.host.userName;
 
@@ -513,14 +645,19 @@ wss.on('connection', (ws) => {
                         type: 'ROOM_RECONNECTED',
                         roomCode,
                         isHost: true,
+                        isSpectator: false,
                         myColor: room.host.color,
                         myUserName: room.host.userName,
                         opponentUserName: room.guest ? room.guest.userName : 'Đối thủ',
                         opponentColor: room.guestColor,
                         opponentJoined: !!(room.guest && room.guest.connected),
                         fen: room.fen,
-                        currentTurn: room.currentTurn
+                        currentTurn: room.currentTurn,
+                        timer: room.timer,
+                        spectatorCount: room.spectators ? room.spectators.size : 0
                     }));
+
+                    broadcastPlayersUpdated(room);
 
                     if (room.guest && room.guest.ws && room.guest.ws.readyState === 1) {
                         room.guest.ws.send(JSON.stringify({
@@ -543,6 +680,7 @@ wss.on('connection', (ws) => {
                     room.guest.connected = true;
                     ws.roomCode = roomCode;
                     ws.isHost = false;
+                    ws.isSpectator = false;
                     ws.userId = userId;
                     ws.userName = room.guest.userName;
 
@@ -552,14 +690,19 @@ wss.on('connection', (ws) => {
                         type: 'ROOM_RECONNECTED',
                         roomCode,
                         isHost: false,
+                        isSpectator: false,
                         myColor: room.guest.color,
                         myUserName: room.guest.userName,
                         opponentUserName: room.host ? room.host.userName : 'Chủ phòng',
                         opponentColor: room.host ? room.host.color : 'red',
                         opponentJoined: !!(room.host && room.host.connected),
                         fen: room.fen,
-                        currentTurn: room.currentTurn
+                        currentTurn: room.currentTurn,
+                        timer: room.timer,
+                        spectatorCount: room.spectators ? room.spectators.size : 0
                     }));
+
+                    broadcastPlayersUpdated(room);
 
                     if (room.host && room.host.ws && room.host.ws.readyState === 1) {
                         room.host.ws.send(JSON.stringify({
@@ -570,9 +713,40 @@ wss.on('connection', (ws) => {
                     }
                     return;
                 }
+
+                // c) Khán giả kết nối lại
+                if (room.spectators && room.spectators.has(userId)) {
+                    const spec = room.spectators.get(userId);
+                    spec.ws = ws;
+                    spec.connected = true;
+                    if (userName) spec.userName = userName;
+                    ws.roomCode = roomCode;
+                    ws.isHost = false;
+                    ws.isSpectator = true;
+                    ws.userId = userId;
+                    ws.userName = spec.userName;
+
+                    console.log(`🔄 [Online] Khán giả [${roomCode}] (${spec.userName}) kết nối lại!`);
+
+                    ws.send(JSON.stringify({
+                        type: 'ROOM_JOINED_SPECTATOR',
+                        roomCode,
+                        isPermanent: room.isPermanent,
+                        myUserName: spec.userName,
+                        host: room.host ? { userName: room.host.userName, color: room.host.color } : null,
+                        guest: room.guest ? { userName: room.guest.userName, color: room.guest.color } : null,
+                        fen: room.fen,
+                        currentTurn: room.currentTurn,
+                        timer: room.timer,
+                        spectatorCount: room.spectators.size
+                    }));
+
+                    broadcastPlayersUpdated(room);
+                    return;
+                }
             }
 
-            // XỬ LÝ PHÒNG CỐ ĐỊNH 013579 (AI VÀO TRƯỚC LÀM CHỦ, VÀO SAU LÀM KHÁCH)
+            // XỬ LÝ PHÒNG CỐ ĐỊNH 013579 (AI VÀO TRƯỚC LÀM CHỦ, VÀO SAU LÀM KHÁCH, VÀO THỨ 3+ LÀM KHÁN GIẢ)
             if (room.isPermanent) {
                 // Nếu chưa có chủ phòng hoặc chủ phòng cũ đã ngắt kết nối hết hạn
                 if (!room.host || !room.host.connected) {
@@ -580,6 +754,7 @@ wss.on('connection', (ws) => {
                     room.host = { ws, userId, userName: hostName, color: room.hostColor || 'red', connected: true, disconnectTimer: null };
                     ws.roomCode = roomCode;
                     ws.isHost = true;
+                    ws.isSpectator = false;
                     ws.userId = userId;
                     ws.userName = hostName;
 
@@ -593,8 +768,12 @@ wss.on('connection', (ws) => {
                         myUserName: hostName,
                         guestColor: room.guestColor || 'black',
                         fen: room.fen,
-                        currentTurn: room.currentTurn
+                        currentTurn: room.currentTurn,
+                        timer: room.timer,
+                        spectatorCount: room.spectators ? room.spectators.size : 0
                     }));
+
+                    broadcastPlayersUpdated(room);
 
                     if (room.guest && room.guest.connected && room.guest.ws && room.guest.ws.readyState === 1) {
                         ws.send(JSON.stringify({
@@ -614,10 +793,11 @@ wss.on('connection', (ws) => {
                     room.guest = { ws, userId, userName: guestName, color: guestColor, connected: true, disconnectTimer: null };
                     ws.roomCode = roomCode;
                     ws.isHost = false;
+                    ws.isSpectator = false;
                     ws.userId = userId;
                     ws.userName = guestName;
 
-                    console.log(`👥 [Fixed Room 013579] ${guestName} tham gia phòng (UID: ${userId})`);
+                    console.log(`👥 [Fixed Room 013579] ${guestName} tham gia phòng làm Khách (UID: ${userId})`);
 
                     ws.send(JSON.stringify({
                         type: 'ROOM_JOINED',
@@ -628,8 +808,12 @@ wss.on('connection', (ws) => {
                         hostColor: room.host.color,
                         opponentUserName: room.host.userName,
                         fen: room.fen,
-                        currentTurn: room.currentTurn
+                        currentTurn: room.currentTurn,
+                        timer: room.timer,
+                        spectatorCount: room.spectators ? room.spectators.size : 0
                     }));
+
+                    broadcastPlayersUpdated(room);
 
                     if (room.host && room.host.ws && room.host.ws.readyState === 1) {
                         room.host.ws.send(JSON.stringify({
@@ -642,49 +826,113 @@ wss.on('connection', (ws) => {
                     return;
                 }
 
-                // Cả 2 slot đều đang có người chơi kết nối
-                return ws.send(JSON.stringify({
-                    type: 'ERROR',
-                    message: 'Phòng cố định 013579 hiện đang có 2 người chơi! Vui lòng thử lại sau.'
+                // Cả 2 slot Host & Guest đều đã có người -> NGƯỜI VÀO SAU LÀ KHÁN GIẢ (SPECTATOR)!
+                const specName = userName || ('Khán giả ' + Math.floor(100 + Math.random() * 900));
+                const specId = userId || ('spec_' + Math.random().toString(36).substring(2, 8));
+                room.spectators.set(specId, { ws, userId: specId, userName: specName, connected: true });
+                ws.roomCode = roomCode;
+                ws.isHost = false;
+                ws.isSpectator = true;
+                ws.userId = specId;
+                ws.userName = specName;
+
+                console.log(`👁️ [Fixed Room 013579] ${specName} tham gia xem cờ (UID: ${specId})`);
+
+                ws.send(JSON.stringify({
+                    type: 'ROOM_JOINED_SPECTATOR',
+                    roomCode,
+                    isPermanent: true,
+                    myUserName: specName,
+                    host: { userName: room.host.userName, color: room.host.color },
+                    guest: { userName: room.guest.userName, color: room.guest.color },
+                    fen: room.fen,
+                    currentTurn: room.currentTurn,
+                    timer: room.timer,
+                    spectatorCount: room.spectators.size
                 }));
+
+                broadcastPlayersUpdated(room);
+                broadcastToRoom(room, {
+                    type: 'CHAT_MESSAGE',
+                    senderRole: 'system',
+                    senderName: 'Hệ thống',
+                    text: `👁️ ${specName} đã vào phòng xem cờ.`,
+                    time: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
+                }, ws);
+                return;
             }
 
-            // XỬ LÝ PHÒNG RIÊNG TƯ BÌNH THƯỜNG
-            if (room.guest && room.guest.connected && room.guest.ws && room.guest.ws.readyState === 1 && room.guest.ws !== ws) {
-                return ws.send(JSON.stringify({
-                    type: 'ERROR',
-                    message: 'Phòng đã đủ 2 người chơi!'
+            // XỬ LÝ PHÒNG RIÊNG TƯ (NẾU CHƯA CÓ KHÁCH -> LÀM KHÁCH; ĐÃ ĐỦ 2 NGƯỜI -> LÀM KHÁN GIẢ)
+            if (!room.guest || !room.guest.connected) {
+                const guestName = userName || 'Khách';
+                room.guest = { ws, userId, userName: guestName, color: room.guestColor, connected: true, disconnectTimer: null };
+                ws.roomCode = roomCode;
+                ws.isHost = false;
+                ws.isSpectator = false;
+                ws.userId = userId;
+                ws.userName = guestName;
+
+                console.log(`👥 [Online] ${guestName} đã tham gia phòng: [${roomCode}] (${room.guestColor})`);
+
+                ws.send(JSON.stringify({
+                    type: 'ROOM_JOINED',
+                    roomCode,
+                    myColor: room.guestColor,
+                    myUserName: guestName,
+                    hostColor: room.host ? room.host.color : 'red',
+                    opponentUserName: room.host ? room.host.userName : 'Chủ phòng',
+                    fen: room.fen,
+                    currentTurn: room.currentTurn,
+                    timer: room.timer,
+                    spectatorCount: room.spectators ? room.spectators.size : 0
                 }));
+
+                broadcastPlayersUpdated(room);
+
+                if (room.host && room.host.ws && room.host.ws.readyState === 1) {
+                    room.host.ws.send(JSON.stringify({
+                        type: 'PLAYER_JOINED',
+                        opponentUserName: guestName,
+                        message: `${guestName} đã tham gia phòng! Sẵn sàng thi đấu.`,
+                        guestColor: room.guestColor
+                    }));
+                }
+                return;
             }
 
-            const guestName = userName || 'Khách';
-            room.guest = { ws, userId, userName: guestName, color: room.guestColor, connected: true, disconnectTimer: null };
+            // Phòng riêng tư đã có đủ 2 người thi đấu -> VÀO VỚI TƯ CÁCH KHÁN GIẢ (SPECTATOR)
+            const specName = userName || ('Khán giả ' + Math.floor(100 + Math.random() * 900));
+            const specId = userId || ('spec_' + Math.random().toString(36).substring(2, 8));
+            room.spectators.set(specId, { ws, userId: specId, userName: specName, connected: true });
             ws.roomCode = roomCode;
             ws.isHost = false;
-            ws.userId = userId;
-            ws.userName = guestName;
+            ws.isSpectator = true;
+            ws.userId = specId;
+            ws.userName = specName;
 
-            console.log(`👥 [Online] ${guestName} đã tham gia phòng: [${roomCode}] (${room.guestColor})`);
+            console.log(`👁️ [Online] ${specName} tham gia phòng riêng [${roomCode}] làm KHÁN GIẢ`);
 
             ws.send(JSON.stringify({
-                type: 'ROOM_JOINED',
+                type: 'ROOM_JOINED_SPECTATOR',
                 roomCode,
-                myColor: room.guestColor,
-                myUserName: guestName,
-                hostColor: room.host ? room.host.color : 'red',
-                opponentUserName: room.host ? room.host.userName : 'Chủ phòng',
+                isPermanent: false,
+                myUserName: specName,
+                host: room.host ? { userName: room.host.userName, color: room.host.color } : null,
+                guest: { userName: room.guest.userName, color: room.guest.color },
                 fen: room.fen,
-                currentTurn: room.currentTurn
+                currentTurn: room.currentTurn,
+                timer: room.timer,
+                spectatorCount: room.spectators.size
             }));
 
-            if (room.host && room.host.ws && room.host.ws.readyState === 1) {
-                room.host.ws.send(JSON.stringify({
-                    type: 'PLAYER_JOINED',
-                    opponentUserName: guestName,
-                    message: `${guestName} đã tham gia phòng! Sẵn sàng thi đấu.`,
-                    guestColor: room.guestColor
-                }));
-            }
+            broadcastPlayersUpdated(room);
+            broadcastToRoom(room, {
+                type: 'CHAT_MESSAGE',
+                senderRole: 'system',
+                senderName: 'Hệ thống',
+                text: `👁️ ${specName} đã vào phòng xem cờ.`,
+                time: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
+            }, ws);
             return;
         }
 
@@ -693,20 +941,209 @@ wss.on('connection', (ws) => {
         const room = rooms.get(roomCode);
         if (!room) return;
 
-        // 3. ĐI QUÂN (MOVE)
+        // 3. ĐI QUÂN (MOVE) - CHỈ CHỦ HOẶC KHÁCH MỚI ĐƯỢC PHÉP ĐI QUÂN
         if (type === 'MOVE') {
-            room.fen = data.newFen || room.fen;
-            room.currentTurn = data.nextTurn || (room.fen.split(' ')[1] || 'w');
-
-            const opponent = ws.isHost ? room.guest : room.host;
-            if (opponent && opponent.ws && opponent.ws.readyState === 1) {
-                opponent.ws.send(JSON.stringify({
-                    type: 'OPPONENT_MOVE',
-                    moveCommand: data.moveCommand,
-                    fen: room.fen,
-                    currentTurn: room.currentTurn
+            if (ws.isSpectator) {
+                return ws.send(JSON.stringify({
+                    type: 'ERROR',
+                    message: 'Bạn đang ở chế độ xem cờ! Không thể đi quân.'
                 }));
             }
+
+            const prevTurn = room.currentTurn || (room.fen.split(' ')[1] || 'w');
+            room.fen = data.newFen || room.fen;
+            const nextTurn = data.nextTurn || (room.fen.split(' ')[1] || 'w');
+            room.currentTurn = nextTurn;
+
+            // XỬ LÝ ĐỒNG HỒ TÍNH GIỜ KHI ĐI NƯỚC CỜ
+            if (room.timer && room.timer.enabled) {
+                const now = Date.now();
+                if (room.timer.isRunning && room.timer.lastTick) {
+                    const elapsed = Math.max(0, now - room.timer.lastTick);
+                    if (prevTurn === 'w') {
+                        room.timer.redTimeMs = Math.max(0, room.timer.redTimeMs - elapsed);
+                        if (room.timer.mode === 'increment') {
+                            room.timer.redTimeMs += (room.timer.incSeconds * 1000);
+                        }
+                    } else {
+                        room.timer.blackTimeMs = Math.max(0, room.timer.blackTimeMs - elapsed);
+                        if (room.timer.mode === 'increment') {
+                            room.timer.blackTimeMs += (room.timer.incSeconds * 1000);
+                        }
+                    }
+                }
+
+                // Nếu là chế độ thời gian mỗi nước đi (per_move) -> reset lại thời gian cho bên tiếp theo
+                if (room.timer.mode === 'per_move') {
+                    if (nextTurn === 'w') {
+                        room.timer.redTimeMs = room.timer.moveLimitSeconds * 1000;
+                    } else {
+                        room.timer.blackTimeMs = room.timer.moveLimitSeconds * 1000;
+                    }
+                }
+
+                // Bắt đầu tính giờ cho bên tiếp theo
+                room.timer.activeSide = nextTurn;
+                room.timer.isRunning = true;
+                room.timer.lastTick = now;
+            }
+
+            const movePayload = JSON.stringify({
+                type: 'OPPONENT_MOVE',
+                moveCommand: data.moveCommand,
+                fen: room.fen,
+                currentTurn: room.currentTurn,
+                timer: room.timer
+            });
+
+            // Gửi cho đối thủ
+            const opponent = ws.isHost ? room.guest : room.host;
+            if (opponent && opponent.ws && opponent.ws.readyState === 1) {
+                opponent.ws.send(movePayload);
+            }
+
+            // Gửi cho TẤT CẢ khán giả đang xem cờ
+            if (room.spectators) {
+                room.spectators.forEach((spec) => {
+                    if (spec.ws && spec.ws.readyState === 1) {
+                        try { spec.ws.send(movePayload); } catch (e) {}
+                    }
+                });
+            }
+
+            // Đồng bộ lại đồng hồ cho toàn bộ phòng
+            if (room.timer && room.timer.enabled) {
+                broadcastToRoom(room, {
+                    type: 'TIMER_SYNC',
+                    timer: room.timer
+                });
+            }
+            return;
+        }
+
+        // 3.1. CÀI ĐẶT ĐỒNG HỒ TÍNH GIỜ (CHỦ PHÒNG THIẾT LẬP)
+        if (type === 'SET_TIMER_SETTINGS') {
+            if (!ws.isHost) {
+                return ws.send(JSON.stringify({ type: 'ERROR', message: 'Chỉ Chủ phòng mới có quyền cài đặt đồng hồ!' }));
+            }
+
+            const s = data.settings || {};
+            const enabled = !!s.enabled;
+            const mode = s.mode || (enabled ? 'increment' : 'none');
+            const baseMinutes = Math.max(1, Math.min(180, Number(s.baseMinutes) || 10));
+            const incSeconds = Math.max(0, Math.min(60, Number(s.incSeconds) || 5));
+            const moveLimitSeconds = Math.max(10, Math.min(600, Number(s.moveLimitSeconds) || 90));
+
+            room.timer = {
+                enabled,
+                mode,
+                baseMinutes,
+                incSeconds,
+                moveLimitSeconds,
+                redTimeMs: mode === 'per_move' ? moveLimitSeconds * 1000 : baseMinutes * 60 * 1000,
+                blackTimeMs: mode === 'per_move' ? moveLimitSeconds * 1000 : baseMinutes * 60 * 1000,
+                activeSide: null,
+                isRunning: false,
+                lastTick: null
+            };
+
+            console.log(`⏱️ [Online] Chủ phòng [${roomCode}] thiết lập đồng hồ: ${mode} (${baseMinutes}p + ${incSeconds}s / ${moveLimitSeconds}s)`);
+
+            let desc = 'Tắt đồng hồ';
+            if (enabled) {
+                if (mode === 'increment') desc = `${baseMinutes} phút + ${incSeconds}s tích lũy`;
+                else if (mode === 'per_move') desc = `${moveLimitSeconds} giây mỗi nước`;
+            }
+
+            broadcastToRoom(room, {
+                type: 'TIMER_SYNC',
+                timer: room.timer,
+                message: `Chủ phòng đã cài đặt đồng hồ: [${desc}]`
+            });
+            return;
+        }
+
+        // 3.2. CHỦ PHÒNG CHỌN KHÁN GIẢ VÀO ĐÁNH THAY THẾ (SUBSTITUTE_GUEST)
+        if (type === 'SUBSTITUTE_GUEST') {
+            if (!ws.isHost) {
+                return ws.send(JSON.stringify({ type: 'ERROR', message: 'Chỉ Chủ phòng mới có quyền thay đổi kỳ thủ!' }));
+            }
+
+            const targetUserId = data.targetUserId ? String(data.targetUserId).trim() : null;
+            if (!targetUserId || !room.spectators || !room.spectators.has(targetUserId)) {
+                return ws.send(JSON.stringify({ type: 'ERROR', message: 'Không tìm thấy khán giả này trong phòng!' }));
+            }
+
+            const targetSpec = room.spectators.get(targetUserId);
+            const oldGuest = room.guest;
+            const guestColor = room.guestColor || (room.host.color === 'red' ? 'black' : 'red');
+
+            console.log(`🔄 [Online] Chủ phòng [${roomCode}] đổi người: ${targetSpec.userName} vào đánh thay cho ${oldGuest ? oldGuest.userName : 'vị trí trống'}`);
+
+            // Khách cũ bị chuyển xuống làm Khán giả xem cờ
+            if (oldGuest && oldGuest.userId) {
+                oldGuest.connected = true;
+                if (oldGuest.ws) {
+                    oldGuest.ws.isHost = false;
+                    oldGuest.ws.isSpectator = true;
+                    try {
+                        oldGuest.ws.send(JSON.stringify({
+                            type: 'DEMOTED_TO_SPECTATOR',
+                            message: 'Bạn đã được chuyển sang chế độ Khán giả xem cờ.'
+                        }));
+                    } catch (e) {}
+                }
+                room.spectators.set(oldGuest.userId, {
+                    ws: oldGuest.ws,
+                    userId: oldGuest.userId,
+                    userName: oldGuest.userName,
+                    connected: oldGuest.connected
+                });
+            }
+
+            // Khán giả được chọn nâng lên thành Khách thi đấu
+            room.spectators.delete(targetUserId);
+            room.guest = {
+                ws: targetSpec.ws,
+                userId: targetSpec.userId,
+                userName: targetSpec.userName,
+                color: guestColor,
+                connected: true,
+                disconnectTimer: null
+            };
+
+            if (targetSpec.ws) {
+                targetSpec.ws.isHost = false;
+                targetSpec.ws.isSpectator = false;
+                try {
+                    targetSpec.ws.send(JSON.stringify({
+                        type: 'PROMOTED_TO_GUEST',
+                        myColor: guestColor,
+                        opponentUserName: room.host.userName,
+                        opponentColor: room.host.color,
+                        message: `Bạn đã được Chủ phòng chọn vào thi đấu! Bạn cầm quân [${guestColor === 'red' ? 'Đỏ' : 'Đen'}].`
+                    }));
+                } catch (e) {}
+            }
+
+            // Reset timer về trạng thái chờ nước đi mới
+            if (room.timer && room.timer.enabled) {
+                room.timer.redTimeMs = room.timer.mode === 'per_move' ? room.timer.moveLimitSeconds * 1000 : room.timer.baseMinutes * 60 * 1000;
+                room.timer.blackTimeMs = room.timer.mode === 'per_move' ? room.timer.moveLimitSeconds * 1000 : room.timer.baseMinutes * 60 * 1000;
+                room.timer.activeSide = null;
+                room.timer.isRunning = false;
+                room.timer.lastTick = null;
+                broadcastToRoom(room, { type: 'TIMER_SYNC', timer: room.timer });
+            }
+
+            broadcastPlayersUpdated(room);
+            broadcastToRoom(room, {
+                type: 'CHAT_MESSAGE',
+                senderRole: 'system',
+                senderName: 'Hệ thống',
+                text: `⚔️ Chủ phòng đã chọn ${targetSpec.userName} vào thi đấu thay thế!`,
+                time: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
+            });
             return;
         }
 
@@ -719,14 +1156,12 @@ wss.on('connection', (ws) => {
 
             console.log(`🛠️ [Online] Chủ phòng [${roomCode}] đã cập nhật thế cờ mới`);
 
-            if (room.guest && room.guest.ws && room.guest.ws.readyState === 1) {
-                room.guest.ws.send(JSON.stringify({
-                    type: 'BOARD_UPDATED',
-                    fen: room.fen,
-                    currentTurn: room.currentTurn,
-                    message: 'Chủ phòng đã chỉnh sửa và cập nhật bàn cờ mới!'
-                }));
-            }
+            broadcastToRoom(room, {
+                type: 'BOARD_UPDATED',
+                fen: room.fen,
+                currentTurn: room.currentTurn,
+                message: 'Chủ phòng đã chỉnh sửa và cập nhật bàn cờ mới!'
+            }, ws);
             return;
         }
 
@@ -745,15 +1180,12 @@ wss.on('connection', (ws) => {
 
             console.log(`🎯 [Online] Chủ phòng [${roomCode}] chọn lượt đi: ${newTurn === 'w' ? 'Đỏ' : 'Đen'}`);
 
-            const turnMsg = JSON.stringify({
+            broadcastToRoom(room, {
                 type: 'TURN_CHANGED',
                 currentTurn: newTurn,
                 fen: room.fen,
                 message: `Chủ phòng đã chọn lượt đi: ${newTurn === 'w' ? 'Bên Đỏ' : 'Bên Đen'}`
             });
-
-            if (room.host && room.host.ws && room.host.ws.readyState === 1) room.host.ws.send(turnMsg);
-            if (room.guest && room.guest.ws && room.guest.ws.readyState === 1) room.guest.ws.send(turnMsg);
             return;
         }
 
@@ -784,6 +1216,7 @@ wss.on('connection', (ws) => {
                     message: `Chủ phòng đã đổi phe! Bạn đổi sang cầm quân [${room.guestColor === 'red' ? 'Đỏ' : 'Đen'}]`
                 }));
             }
+            broadcastPlayersUpdated(room);
             return;
         }
 
@@ -794,38 +1227,48 @@ wss.on('connection', (ws) => {
             room.fen = data.fen || DEFAULT_XIANGQI_FEN;
             room.currentTurn = 'w';
 
+            // Reset timer về trạng thái ban đầu
+            if (room.timer && room.timer.enabled) {
+                room.timer.redTimeMs = room.timer.mode === 'per_move' ? room.timer.moveLimitSeconds * 1000 : room.timer.baseMinutes * 60 * 1000;
+                room.timer.blackTimeMs = room.timer.mode === 'per_move' ? room.timer.moveLimitSeconds * 1000 : room.timer.baseMinutes * 60 * 1000;
+                room.timer.activeSide = null;
+                room.timer.isRunning = false;
+                room.timer.lastTick = null;
+            }
+
             console.log(`🆕 [Online] Chủ phòng [${roomCode}] bắt đầu ván mới`);
 
-            const resetMsg = JSON.stringify({
+            broadcastToRoom(room, {
                 type: 'GAME_RESET',
                 fen: room.fen,
                 currentTurn: room.currentTurn,
+                timer: room.timer,
                 message: 'Chủ phòng đã khởi tạo ván cờ mới!'
             });
-
-            if (room.host && room.host.ws && room.host.ws.readyState === 1) room.host.ws.send(resetMsg);
-            if (room.guest && room.guest.ws && room.guest.ws.readyState === 1) room.guest.ws.send(resetMsg);
             return;
         }
 
-        // 8. TIN NHẮN CHAT TRONG TRẬN
+        // 8. TIN NHẮN CHAT TRONG TRẬN (CHỦ, KHÁCH VÀ KHÁN GIẢ ĐỀU ĐƯỢC CHAT)
         if (type === 'CHAT') {
             const text = String(data.text || '').trim();
             if (!text) return;
-            const senderRole = ws.isHost ? 'host' : 'guest';
-            const senderName = data.senderName || ws.userName || (ws.isHost ? 'Chủ phòng' : 'Khách');
+            const senderRole = ws.isHost ? 'host' : (ws.isSpectator ? 'spectator' : 'guest');
+            let senderName = data.senderName || ws.userName || (ws.isHost ? 'Chủ phòng' : (ws.isSpectator ? 'Khán giả' : 'Khách'));
+            if (ws.isSpectator && !senderName.includes('Khán giả')) {
+                senderName = `[Khán giả] ${senderName}`;
+            }
             const time = new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
 
-            const payload = JSON.stringify({
+            const payload = {
                 type: 'CHAT_MESSAGE',
                 senderRole,
                 senderName,
+                senderUserId: ws.userId,
                 text: text.slice(0, 250),
                 time
-            });
+            };
 
-            if (room.host && room.host.ws && room.host.ws.readyState === 1) room.host.ws.send(payload);
-            if (room.guest && room.guest.ws && room.guest.ws.readyState === 1) room.guest.ws.send(payload);
+            broadcastToRoom(room, payload);
             return;
         }
 
@@ -835,24 +1278,57 @@ wss.on('connection', (ws) => {
             if (!newName) return;
             ws.userName = newName;
             if (ws.isHost && room.host) room.host.userName = newName;
-            else if (!ws.isHost && room.guest) room.guest.userName = newName;
-
-            const opponent = ws.isHost ? room.guest : room.host;
-            if (opponent && opponent.ws && opponent.ws.readyState === 1) {
-                opponent.ws.send(JSON.stringify({
-                    type: 'OPPONENT_RENAMED',
-                    role: ws.isHost ? 'host' : 'guest',
-                    newName: newName
-                }));
+            else if (!ws.isHost && !ws.isSpectator && room.guest) room.guest.userName = newName;
+            else if (ws.isSpectator && room.spectators.has(ws.userId)) {
+                room.spectators.get(ws.userId).userName = newName;
             }
+
+            broadcastPlayersUpdated(room);
+            broadcastToRoom(room, {
+                type: 'OPPONENT_RENAMED',
+                role: ws.isHost ? 'host' : (ws.isSpectator ? 'spectator' : 'guest'),
+                userId: ws.userId,
+                newName: newName
+            }, ws);
             return;
         }
 
-        // 9. WEBRTC AUDIO & MICROPHONE SIGNALING RELAY
-        if (type === 'WEBRTC_OFFER' || type === 'WEBRTC_ANSWER' || type === 'WEBRTC_ICE' || type === 'VOICE_STATUS') {
-            const opponent = ws.isHost ? room.guest : room.host;
-            if (opponent && opponent.ws && opponent.ws.readyState === 1) {
-                opponent.ws.send(JSON.stringify(data));
+        // 9. WEBRTC AUDIO & VIDEO SIGNALING RELAY (CAMERA + MICROPHONE)
+        if (type === 'WEBRTC_OFFER' || type === 'WEBRTC_ANSWER' || type === 'WEBRTC_ICE' || type === 'VOICE_STATUS' || type === 'CAMERA_STATUS') {
+            // Khán giả KHÔNG ĐƯỢC PHÉP bật camera!
+            if (ws.isSpectator && type === 'CAMERA_STATUS' && data.isCameraActive) {
+                return ws.send(JSON.stringify({
+                    type: 'ERROR',
+                    message: 'Khán giả chỉ có thể bật Mic, không thể bật Camera!'
+                }));
+            }
+
+            // Gắn thông tin người gửi
+            data.fromUserId = ws.userId;
+            data.fromRole = ws.isHost ? 'host' : (ws.isSpectator ? 'spectator' : 'guest');
+
+            // Nếu có chỉ định targetUserId -> gửi tới đích
+            if (data.targetUserId) {
+                let targetWs = null;
+                if (room.host && room.host.userId === data.targetUserId) targetWs = room.host.ws;
+                else if (room.guest && room.guest.userId === data.targetUserId) targetWs = room.guest.ws;
+                else if (room.spectators && room.spectators.has(data.targetUserId)) targetWs = room.spectators.get(data.targetUserId).ws;
+
+                if (targetWs && targetWs.readyState === 1) {
+                    targetWs.send(JSON.stringify(data));
+                }
+                return;
+            }
+
+            // Mặc định relay giữa Chủ phòng và Khách đấu
+            if (type === 'CAMERA_STATUS') {
+                // Broadcast trạng thái camera tới toàn phòng để khán giả cũng thấy avatar/trạng thái
+                broadcastToRoom(room, data);
+            } else {
+                const opponent = ws.isHost ? room.guest : room.host;
+                if (opponent && opponent.ws && opponent.ws.readyState === 1) {
+                    opponent.ws.send(JSON.stringify(data));
+                }
             }
             return;
         }
@@ -882,6 +1358,17 @@ function handleClientNetworkDrop(ws) {
     const room = rooms.get(ws.roomCode);
     const roomCode = ws.roomCode;
 
+    // A) KHÁN GIẢ RỚT MẠNG
+    if (ws.isSpectator) {
+        if (room.spectators && room.spectators.has(ws.userId)) {
+            room.spectators.delete(ws.userId);
+            console.log(`👁️ [Online] Khán giả [${ws.userName || ws.userId}] rời phòng [${roomCode}] do ngắt kết nối.`);
+            broadcastPlayersUpdated(room);
+        }
+        return;
+    }
+
+    // B) CHỦ PHÒNG RỚT MẠNG
     if (ws.isHost && room.host && room.host.ws === ws) {
         room.host.connected = false;
         room.host.ws = null;
@@ -913,6 +1400,7 @@ function handleClientNetworkDrop(ws) {
                     room.fen = DEFAULT_XIANGQI_FEN;
                     room.currentTurn = 'w';
                 }
+                broadcastPlayersUpdated(room);
             } else {
                 if (room.guest && room.guest.ws && room.guest.ws.readyState === 1) {
                     room.guest.ws.send(JSON.stringify({
@@ -921,10 +1409,15 @@ function handleClientNetworkDrop(ws) {
                     }));
                     room.guest.ws.roomCode = null;
                 }
+                broadcastToRoom(room, {
+                    type: 'HOST_LEFT',
+                    message: 'Chủ phòng đã rời phòng. Phòng đấu kết thúc.'
+                });
                 rooms.delete(roomCode);
             }
         }, RECONNECT_GRACE_MS);
 
+    // C) KHÁCH ĐẤU RỚT MẠNG
     } else if (!ws.isHost && room.guest && room.guest.ws === ws) {
         room.guest.connected = false;
         room.guest.ws = null;
@@ -944,7 +1437,7 @@ function handleClientNetworkDrop(ws) {
             if (room.host && room.host.ws && room.host.ws.readyState === 1) {
                 room.host.ws.send(JSON.stringify({
                     type: 'GUEST_LEFT',
-                    message: 'Đối thủ đã rời phòng. Đang đợi người chơi khác...'
+                    message: 'Đối thủ đã rời phòng. Bạn có thể chọn khán giả vào thi đấu tiếp!'
                 }));
             }
             if (room.isPermanent && (!room.host || !room.host.connected)) {
@@ -952,6 +1445,7 @@ function handleClientNetworkDrop(ws) {
                 room.fen = DEFAULT_XIANGQI_FEN;
                 room.currentTurn = 'w';
             }
+            broadcastPlayersUpdated(room);
         }, RECONNECT_GRACE_MS);
     }
 }
@@ -963,6 +1457,18 @@ function handleClientExplicitLeave(ws) {
     const room = rooms.get(ws.roomCode);
     const roomCode = ws.roomCode;
 
+    // A) KHÁN GIẢ RỜI PHÒNG
+    if (ws.isSpectator) {
+        if (room.spectators && room.spectators.has(ws.userId)) {
+            room.spectators.delete(ws.userId);
+            console.log(`👁️ [Online] Khán giả [${ws.userName || ws.userId}] chủ động rời phòng [${roomCode}].`);
+            broadcastPlayersUpdated(room);
+        }
+        ws.roomCode = null;
+        return;
+    }
+
+    // B) CHỦ PHÒNG RỜI PHÒNG
     if (ws.isHost) {
         if (room.host?.disconnectTimer) clearTimeout(room.host.disconnectTimer);
         console.log(`🚪 [Online] Chủ phòng [${roomCode}] chủ động rời phòng.`);
@@ -982,16 +1488,18 @@ function handleClientExplicitLeave(ws) {
                 room.fen = DEFAULT_XIANGQI_FEN;
                 room.currentTurn = 'w';
             }
+            broadcastPlayersUpdated(room);
         } else {
-            if (room.guest && room.guest.ws && room.guest.ws.readyState === 1) {
-                room.guest.ws.send(JSON.stringify({
-                    type: 'HOST_LEFT',
-                    message: 'Chủ phòng đã rời phòng. Phòng đấu kết thúc.'
-                }));
-                room.guest.ws.roomCode = null;
-            }
+            broadcastToRoom(room, {
+                type: 'HOST_LEFT',
+                message: 'Chủ phòng đã rời phòng. Phòng đấu kết thúc.'
+            });
+            if (room.guest && room.guest.ws) room.guest.ws.roomCode = null;
+            if (room.spectators) room.spectators.forEach(s => { if (s.ws) s.ws.roomCode = null; });
             rooms.delete(roomCode);
         }
+
+    // C) KHÁCH RỜI PHÒNG
     } else {
         if (room.guest?.disconnectTimer) clearTimeout(room.guest.disconnectTimer);
         console.log(`🚪 [Online] Khách [${roomCode}] chủ động rời phòng.`);
@@ -999,7 +1507,7 @@ function handleClientExplicitLeave(ws) {
         if (room.host && room.host.ws && room.host.ws.readyState === 1) {
             room.host.ws.send(JSON.stringify({
                 type: 'GUEST_LEFT',
-                message: 'Đối thủ đã rời phòng. Đang đợi người chơi khác...'
+                message: 'Đối thủ đã rời phòng. Bạn có thể chọn khán giả vào thi đấu tiếp!'
             }));
         }
         if (room.isPermanent && (!room.host || !room.host.connected)) {
@@ -1007,6 +1515,7 @@ function handleClientExplicitLeave(ws) {
             room.fen = DEFAULT_XIANGQI_FEN;
             room.currentTurn = 'w';
         }
+        broadcastPlayersUpdated(room);
     }
 
     ws.roomCode = null;

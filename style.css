@@ -2133,3 +2133,237 @@ body.mode-online .online-user-name:hover {
 #btn-send-chat:hover {
     background: #007032;
 }
+
+/* =========================================================
+   DẢI THÔNG TIN NGƯỜI CHƠI, CAMERA PIP & ĐỒNG HỒ TÍNH GIỜ
+   ========================================================= */
+body.mode-online .online-player-strip {
+    display: flex !important;
+}
+
+.online-player-strip {
+    width: 100%;
+    max-width: calc((100dvh - 100px) * (380 / 420));
+    height: 44px;
+    background: #ffffff;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    padding: 3px 8px;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 4px;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
+    flex-shrink: 0;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+#online-player-strip-bottom {
+    margin-top: 2px;
+    margin-bottom: 4px;
+}
+
+.online-strip-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    flex: 1;
+}
+
+/* Khung Camera WebRTC */
+.online-cam-wrapper {
+    width: 58px;
+    height: 38px;
+    background: #0f172a;
+    border-radius: 6px;
+    overflow: hidden;
+    position: relative;
+    border: 1.5px solid #94a3b8;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+    flex-shrink: 0;
+    cursor: pointer;
+    transition: transform 0.2s, border-color 0.2s;
+}
+
+.online-cam-wrapper:hover {
+    border-color: #0284c7;
+}
+
+.online-cam-wrapper video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: none;
+    background: #000;
+}
+
+#online-local-video {
+    transform: scaleX(-1); /* Gương tự soi */
+}
+
+.cam-placeholder {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    color: #94a3b8;
+    background: #1e293b;
+    user-select: none;
+}
+
+.online-strip-info {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.online-strip-name {
+    font-size: 13px;
+    font-weight: 700;
+    color: #0f172a;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 130px;
+}
+
+.online-strip-side {
+    font-size: 11px;
+    font-weight: 600;
+    color: #64748b;
+    white-space: nowrap;
+}
+
+.online-strip-right {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+/* Đồng hồ số điện tử (Digital Clock) */
+.online-digital-clock {
+    background: #090d16;
+    color: #4ade80;
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 18px;
+    font-weight: 900;
+    padding: 3px 8px;
+    border-radius: 6px;
+    border: 1.5px solid #334155;
+    letter-spacing: 1px;
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.6);
+    user-select: none;
+    min-width: 68px;
+    text-align: center;
+    transition: all 0.2s ease;
+}
+
+.online-digital-clock.clock-active {
+    border-color: #22c55e;
+    color: #22c55e;
+    background: #022c15;
+    box-shadow: 0 0 10px rgba(34, 197, 94, 0.35), inset 0 2px 4px rgba(0, 0, 0, 0.6);
+}
+
+.online-digital-clock.time-warning {
+    color: #ef4444 !important;
+    border-color: #ef4444 !important;
+    background: #450a0a !important;
+    box-shadow: 0 0 12px rgba(239, 68, 68, 0.5), inset 0 2px 4px rgba(0, 0, 0, 0.6);
+    animation: clock-pulse 1s infinite alternate;
+}
+
+@keyframes clock-pulse {
+    0% { transform: scale(1); }
+    100% { transform: scale(1.05); }
+}
+
+@media (max-aspect-ratio: 1/1), (max-width: 768px) {
+    .online-player-strip {
+        height: 38px;
+        padding: 2px 6px;
+        margin-bottom: 2px;
+    }
+    .online-cam-wrapper {
+        width: 48px;
+        height: 32px;
+    }
+    .cam-placeholder {
+        font-size: 14px;
+    }
+    .online-strip-name {
+        font-size: 12px;
+        max-width: 95px;
+    }
+    .online-strip-side {
+        font-size: 10px;
+    }
+    .online-digital-clock {
+        font-size: 15px;
+        padding: 2px 6px;
+        min-width: 58px;
+    }
+}
+
+/* Nút Preset Timer */
+.timer-preset-btn {
+    background: #f8fafc;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    padding: 7px 4px;
+    font-size: 12px;
+    font-weight: 700;
+    color: #1e293b;
+    cursor: pointer;
+    transition: all 0.15s;
+    text-align: center;
+}
+.timer-preset-btn:hover {
+    background: #f1f5f9;
+    border-color: #94a3b8;
+}
+.timer-preset-btn.active {
+    background: #eff6ff;
+    border-color: #2563eb;
+    color: #1d4ed8;
+    box-shadow: 0 0 0 1px #2563eb;
+}
+
+/* Danh sách Khán Giả & Đổi người */
+.spectator-item-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 8px;
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    font-size: 12px;
+    gap: 8px;
+}
+.btn-substitute {
+    background: #008a3e;
+    color: #ffffff;
+    border: none;
+    border-radius: 5px;
+    padding: 4px 8px;
+    font-size: 11px;
+    font-weight: bold;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.15s;
+}
+.btn-substitute:hover {
+    background: #007032;
+}
+.btn-online-tool.active-cam {
+    background: #fef2f2 !important;
+    color: #dc2626 !important;
+    border-color: #fca5a5 !important;
+    box-shadow: 0 0 6px rgba(220, 38, 38, 0.3) !important;
+}

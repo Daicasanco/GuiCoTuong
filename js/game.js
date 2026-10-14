@@ -441,6 +441,10 @@ export function handleSquareClick(x, y, iccsPos) {
             showToast("⚠️ Bạn chưa tham gia phòng cờ nào!");
             return;
         }
+        if (onlineState.isSpectator) {
+            showToast("👁️ Bạn đang ở chế độ xem cờ!");
+            return;
+        }
         if (!isMyOnlineTurn()) {
             showToast("⏳ Chưa tới lượt đi của bạn!");
             return;

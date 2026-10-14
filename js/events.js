@@ -12,7 +12,7 @@ import { uploadLocalBook, deleteLocalBook, loadLocalBookFromDB } from './localbo
 import { renderEvalGraph } from './analysis/eval-graph.js';
 import { runAutoGameReview } from './analysis/auto-review.js';
 import { runAIAnnotation } from './analysis/ai-annotate.js';
-import { createOnlineRoom, joinOnlineRoom, leaveOnlineRoom, sendHostSetTurn, sendHostSwapSides, sendResetGame, updateOnlineRoomBar, onlineState, toggleOnlineVoiceMic, sendOnlineChat, toggleChatBox, getOnlineUserName, setOnlineUserName } from './online.js';
+import { createOnlineRoom, joinOnlineRoom, leaveOnlineRoom, sendHostSetTurn, sendHostSwapSides, sendResetGame, updateOnlineRoomBar, onlineState, toggleOnlineVoiceMic, sendOnlineChat, toggleChatBox, getOnlineUserName, setOnlineUserName, toggleOnlineCamera, sendTimerSettings, renderSpectatorsModalList, substituteGuest } from './online.js';
 
 let pendingDeletePuzKey = "";
 
@@ -2705,6 +2705,36 @@ function initOnlineEvents() {
         };
     }
 
+    // 7.1 Bật / Tắt Camera WebRTC
+    const btnOnlineCam = document.getElementById('btn-online-cam');
+    if (btnOnlineCam) {
+        btnOnlineCam.onclick = async () => {
+            await toggleOnlineCamera();
+        };
+    }
+
+    // 7.2 Mở danh sách người xem / quản lý phòng
+    const btnOnlineSpectators = document.getElementById('btn-online-spectators');
+    if (btnOnlineSpectators) {
+        btnOnlineSpectators.onclick = () => {
+            renderSpectatorsModalList();
+            openModal('online-spectators-modal');
+        };
+    }
+    const btnOnlineManagePlayers = document.getElementById('btn-online-manage-players');
+    if (btnOnlineManagePlayers) {
+        btnOnlineManagePlayers.onclick = () => {
+            renderSpectatorsModalList();
+            openModal('online-spectators-modal');
+        };
+    }
+    const btnCloseSpectatorsModal = document.getElementById('btn-close-spectators-modal');
+    if (btnCloseSpectatorsModal) {
+        btnCloseSpectatorsModal.onclick = () => {
+            closeModal('online-spectators-modal');
+        };
+    }
+
     // 8. Bật / Tắt Hộp Chat trực tiếp
     const btnOnlineChat = document.getElementById('btn-online-chat');
     if (btnOnlineChat) {
@@ -2789,6 +2819,88 @@ function initOnlineEvents() {
                 return;
             }
             sendResetGame();
+        };
+    }
+
+    // 13. Quyền của Chủ phòng: Cài Đặt Đồng Hồ Tính Giờ
+    const btnOnlineTimerSetup = document.getElementById('btn-online-timer-setup');
+    if (btnOnlineTimerSetup) {
+        btnOnlineTimerSetup.onclick = () => {
+            if (!onlineState.isHost) {
+                showToast('⚠️ Chỉ chủ phòng mới có quyền cài đặt đồng hồ!');
+                return;
+            }
+            openModal('online-timer-modal');
+        };
+    }
+
+    const btnCloseTimerModal = document.getElementById('btn-close-timer-modal');
+    if (btnCloseTimerModal) {
+        btnCloseTimerModal.onclick = () => {
+            closeModal('online-timer-modal');
+        };
+    }
+
+    const timerPresetBtns = document.querySelectorAll('.timer-preset-btn');
+    const timerCustomType = document.getElementById('timer-custom-type');
+    const timerIncGroup = document.getElementById('timer-custom-increment-group');
+    const timerPermoveGroup = document.getElementById('timer-custom-permove-group');
+    const timerInputBase = document.getElementById('timer-input-base');
+    const timerInputInc = document.getElementById('timer-input-inc');
+    const timerInputPermove = document.getElementById('timer-input-permove');
+
+    function updateTimerCustomVisibility(mode) {
+        if (timerIncGroup) timerIncGroup.style.display = mode === 'increment' ? 'flex' : 'none';
+        if (timerPermoveGroup) timerPermoveGroup.style.display = mode === 'per_move' ? 'flex' : 'none';
+    }
+
+    if (timerCustomType) {
+        timerCustomType.onchange = () => {
+            timerPresetBtns.forEach(b => b.classList.remove('active'));
+            updateTimerCustomVisibility(timerCustomType.value);
+        };
+    }
+
+    timerPresetBtns.forEach(btn => {
+        btn.onclick = () => {
+            timerPresetBtns.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            const mode = btn.getAttribute('data-mode');
+            if (timerCustomType) timerCustomType.value = mode;
+            if (mode === 'increment') {
+                const base = btn.getAttribute('data-base');
+                const inc = btn.getAttribute('data-inc');
+                if (timerInputBase) timerInputBase.value = base;
+                if (timerInputInc) timerInputInc.value = inc;
+            } else if (mode === 'per_move') {
+                const move = btn.getAttribute('data-move');
+                if (timerInputPermove) timerInputPermove.value = move;
+            }
+            updateTimerCustomVisibility(mode);
+        };
+    });
+
+    const btnConfirmTimerModal = document.getElementById('btn-confirm-timer-modal');
+    if (btnConfirmTimerModal) {
+        btnConfirmTimerModal.onclick = () => {
+            if (!onlineState.isHost) {
+                showToast('⚠️ Chỉ chủ phòng mới có quyền cài đặt đồng hồ!');
+                closeModal('online-timer-modal');
+                return;
+            }
+            const mode = timerCustomType ? timerCustomType.value : 'increment';
+            let settings = { mode };
+            if (mode === 'increment') {
+                const base = parseInt(timerInputBase?.value, 10) || 10;
+                const inc = parseInt(timerInputInc?.value, 10) || 0;
+                settings.baseMinutes = base;
+                settings.incrementSeconds = inc;
+            } else if (mode === 'per_move') {
+                const perMove = parseInt(timerInputPermove?.value, 10) || 90;
+                settings.perMoveSeconds = perMove;
+            }
+            sendTimerSettings(settings);
+            closeModal('online-timer-modal');
         };
     }
 
