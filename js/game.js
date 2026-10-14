@@ -1086,8 +1086,9 @@ export function undoVsBot() {
     }
 }
 
-export function instantJumpToNode(targetNode) {
+export function instantJumpToNode(targetNode, isSilent = false) {
     state.pvLines = [];
+    state.customArrows = [];
     state.currentNode = targetNode; 
     ensureNodeData(state.currentNode);
     state.currentSituation = vschess.fenToSituation(state.currentNode.fen); 
@@ -1099,10 +1100,16 @@ export function instantJumpToNode(targetNode) {
     while(temp.parent) { step++; temp = temp.parent; }
     state.currentStepNum = step;
 
-    renderMoveHistory(); saveGameState(); updateVsBotToolButtons();
-    if (state.appMode !== 'memorize') triggerEngineEvaluation(); 
-    updateBlindTurnUI();
-    if (state.appMode === 'memorize') triggerMemorizeBot();
+    if (!isSilent) {
+        renderMoveHistory(); 
+        saveGameState(); 
+        updateVsBotToolButtons();
+        if (state.appMode !== 'memorize' && !state.isChartRunning) triggerEngineEvaluation(); 
+        updateBlindTurnUI();
+        if (state.appMode === 'memorize') triggerMemorizeBot();
+    } else {
+        renderBoardFull(state.currentSituation);
+    }
 }
 
 export function jumpToNode(targetNode) {
@@ -1116,7 +1123,22 @@ export function jumpToNode(targetNode) {
         forceStopAIPlayers(); executeReverseStep(state.currentNode);
     }
     else {
-        forceStopAIPlayers(); instantJumpToNode(targetNode); checkGameOver(); triggerEngineEvaluation(); 
+        forceStopAIPlayers(); instantJumpToNode(targetNode); checkGameOver(); 
+        if (!state.isChartRunning) triggerEngineEvaluation(); 
+    }
+}
+
+export function clearTreeAnalysisData(node) {
+    if (!node) return;
+    
+    node.scoreObj = null;
+    node.normalizedScore = null;
+    node.moveScore = null;
+    node.classification = null;
+    node.aiBestMove = null;
+    
+    for (let i = 0; i < node.children.length; i++) {
+        clearTreeAnalysisData(node.children[i]);
     }
 }
 

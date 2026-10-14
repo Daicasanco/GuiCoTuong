@@ -21,7 +21,10 @@ const defaultSystem = {
     cloudBookLimit: 10,
     animation: true,
     arrows: true,
-    sound: true
+    allowCustomArrows: true,
+    sound: true,
+    boardStyle: "style/1-mac_dinh", 
+    pieceStyle: "style/1-mac_dinh"
 };
 
 const defaultAnalysis = {
@@ -98,6 +101,14 @@ export const state = {
     aiSettings: savedAnalysis,
     vsBotSettings: savedVsBot,
     geminiSettings: savedGemini,
+
+    chartSettings: { mode: 'preset', preset: 'fast', customDepth: 15, customTime: 1, runDepth: 14, runTime: 2 },
+    isChartRunning: false,
+    isChartDrawing: false,
+    isChartAnalyzed: false,
+    chartTotalMoves: 0,
+    chartData: [],
+    chartReport: null,
 
     isEditMode: false,
     selectedPalettePiece: null,

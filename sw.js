@@ -1,5 +1,5 @@
 // sw.js
-const CACHE_NAME = '0.9.9k';
+const CACHE_NAME = '0.9.9L';
 
 const urlsToCache = [
     './',
@@ -17,6 +17,10 @@ const urlsToCache = [
     './js/events.js',
     './js/rules.js',
     './js/db.js',
+    './js/chart.js',
+    './js/analyzer.js',
+    './js/report.js',
+    './style/manifest.json',
     './manifest.json',
     './vschess/jquery.js',
     './vschess/vschess.function.js',

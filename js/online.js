@@ -1480,9 +1480,6 @@ function stopVoiceChat() {
 
 // Kiểm tra và khôi phục phòng nếu người chơi tải lại trang (F5)
 export function checkAndResumeSavedRoom() {
-    const savedRoom = sessionStorage.getItem('tuongky_active_room');
-    if (savedRoom) {
-        console.log(`🔄 [Online] Phát hiện phòng cũ [${savedRoom}]. Đang kết nối lại...`);
-        connectOnlineSocket().catch(e => console.warn('[Online] Chưa thể kết nối lại ngay:', e));
-    }
+    // Không tự động kết nối lại khi tải trang để tránh nhảy vào phòng ngoài ý muốn
+    sessionStorage.removeItem('tuongky_active_room');
 }

@@ -1028,15 +1028,16 @@ wss.on('connection', (ws) => {
             }
 
             const s = data.settings || {};
-            const enabled = !!s.enabled;
-            const mode = s.mode || (enabled ? 'increment' : 'none');
+            const mode = s.mode || 'none';
+            // enabled là true nếu mode là 'increment' hoặc 'per_move', và s.enabled không phải là false
+            const enabled = (mode !== 'none') && (s.enabled !== undefined ? !!s.enabled : true);
             const baseMinutes = Math.max(1, Math.min(180, Number(s.baseMinutes) || 10));
-            const incSeconds = Math.max(0, Math.min(60, Number(s.incSeconds) || 5));
-            const moveLimitSeconds = Math.max(10, Math.min(600, Number(s.moveLimitSeconds) || 90));
+            const incSeconds = Math.max(0, Math.min(60, Number(s.incSeconds !== undefined ? s.incSeconds : s.incrementSeconds) || 0));
+            const moveLimitSeconds = Math.max(10, Math.min(600, Number(s.moveLimitSeconds !== undefined ? s.moveLimitSeconds : s.perMoveSeconds) || 90));
 
             room.timer = {
                 enabled,
-                mode,
+                mode: enabled ? mode : 'none',
                 baseMinutes,
                 incSeconds,
                 moveLimitSeconds,
@@ -1047,7 +1048,7 @@ wss.on('connection', (ws) => {
                 lastTick: null
             };
 
-            console.log(`⏱️ [Online] Chủ phòng [${roomCode}] thiết lập đồng hồ: ${mode} (${baseMinutes}p + ${incSeconds}s / ${moveLimitSeconds}s)`);
+            console.log(`⏱️ [Online] Chủ phòng [${roomCode}] thiết lập đồng hồ: ${mode} (${baseMinutes}p + ${incSeconds}s / ${moveLimitSeconds}s, enabled: ${enabled})`);
 
             let desc = 'Tắt đồng hồ';
             if (enabled) {

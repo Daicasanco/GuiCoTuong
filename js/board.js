@@ -22,11 +22,29 @@ const TO_SCALE = 1.1;             // Điểm đến nước đi trước (to.web
 // Tải ảnh lên RAM
 export function preloadImages() {
     return new Promise((resolve) => {
+        const boardPath = (state.appSettings && state.appSettings.boardStyle) || "style/1-mac_dinh";
+        const piecePath = (state.appSettings && state.appSettings.pieceStyle) || "style/1-mac_dinh";
+
+        const boardArea = document.getElementById('chess-board-area');
+        if (boardArea) {
+            boardArea.style.backgroundImage = `url('${boardPath}/board.webp')`;
+            boardArea.style.setProperty('--bg-image', `url('${boardPath}/board.webp')`);
+        }
+
+        document.querySelectorAll('.piece-palette img').forEach(imgTag => {
+            const pieceCode = imgTag.dataset.piece;
+            if (pieceCode && PIECE_MAP[pieceCode]) {
+                imgTag.src = `${piecePath}/${PIECE_MAP[pieceCode]}.webp`;
+            }
+        });
+
         const pieceKeys = Object.keys(PIECE_MAP);
-        const extraImages = ['shadow', 'dot', 'from', 'to', 'selection', 'blind_b', 'blind_w', 'logo_kyly', 'board']; // Thêm board để canvas có thể tự render toàn bộ
+        const extraImages = ['shadow', 'dot', 'from', 'to', 'selection', 'logo_kyly'];
+        const tagImages = ['best', 'excellent', 'good', 'balanced', 'inaccuracy', 'mistake', 'blunder'];
+        const blindPieces = ['blind_b', 'blind_w']; 
         
         let loadedCount = 0;
-        const totalImages = pieceKeys.length + extraImages.length; 
+        const totalImages = pieceKeys.length + extraImages.length + tagImages.length + blindPieces.length + 1; // +1 cho board
 
         const checkDone = () => {
             loadedCount++;
@@ -41,26 +59,102 @@ export function preloadImages() {
             document.fonts.load('700 24px Charm').catch(() => {});
         }
 
+        // Tải ảnh Bàn Cờ vào RAM
+        const imgBoard = new Image();
+        imgBoard.src = `${boardPath}/board.webp`;
+        imgBoard.onload = () => { imageCache['board'] = imgBoard; checkDone(); };
+        imgBoard.onerror = () => { checkDone(); };
+
         // Tải ảnh các hiệu ứng (UI) & logo
         extraImages.forEach(imgName => {
             const img = new Image();
             img.src = `style/${imgName}.webp`;
             img.onload = () => { imageCache[imgName] = img; checkDone(); };
             img.onerror = () => {
-                // Fallback nếu không có webp
                 const fallbackImg = new Image();
                 fallbackImg.src = `style/${imgName}.png`;
                 fallbackImg.onload = () => { imageCache[imgName] = fallbackImg; checkDone(); };
-                fallbackImg.onerror = () => { console.error(`Lỗi tải ảnh: ${imgName}`); checkDone(); };
+                fallbackImg.onerror = () => { checkDone(); };
             };
+        });
+
+        // Tải ảnh Nhãn dán Đánh giá phân tích (Tags)
+        tagImages.forEach(tagName => {
+            const img = new Image();
+            img.src = `style/tags/${tagName}.webp`;
+            img.onload = () => { imageCache[tagName] = img; checkDone(); };
+            img.onerror = () => { checkDone(); };
+        });
+
+        // Tải ảnh Mù
+        blindPieces.forEach(key => {
+            const img = new Image();
+            img.src = `${piecePath}/${key}.webp`;
+            img.onload = () => { imageCache[key] = img; checkDone(); };
+            img.onerror = () => { checkDone(); };
         });
 
         // Tải ảnh các quân cờ
         pieceKeys.forEach(key => {
             const img = new Image();
-            img.src = `style/${PIECE_MAP[key]}.webp`;
+            img.src = `${piecePath}/${PIECE_MAP[key]}.webp`;
             img.onload = () => { imageCache[key] = img; checkDone(); };
-            img.onerror = () => { console.error(`Lỗi tải ảnh quân cờ: ${img.src}`); checkDone(); };
+            img.onerror = () => { checkDone(); };
+        });
+    });
+}
+
+// HÀM TẢI LẠI RIÊNG BÀN CỜ (Dùng cho Setting)
+export function reloadBoardImage(boardPath) {
+    return new Promise((resolve) => {
+        const img = new Image();
+        img.src = `${boardPath}/board.webp`;
+        img.onload = () => { 
+            imageCache['board'] = img; 
+            const boardArea = document.getElementById('chess-board-area');
+            if (boardArea) {
+                boardArea.style.backgroundImage = `url('${img.src}')`;
+                boardArea.style.setProperty('--bg-image', `url('${img.src}')`);
+            }
+            resolve(); 
+        };
+        img.onerror = () => { console.error(`Lỗi tải ảnh bàn cờ: ${img.src}`); resolve(); };
+    });
+}
+
+// HÀM TẢI LẠI RIÊNG QUÂN CỜ (Dùng cho Setting)
+export function reloadPieceImages(piecePath) {
+    return new Promise((resolve) => {
+        const pieceKeys = Object.keys(PIECE_MAP);
+        const extraPieces = ['blind_b', 'blind_w'];
+        
+        let loadedCount = 0;
+        const totalImages = pieceKeys.length + extraPieces.length; 
+
+        const checkDone = () => {
+            loadedCount++;
+            if (loadedCount === totalImages) resolve();
+        };
+
+        extraPieces.forEach(key => {
+            const img = new Image();
+            img.src = `${piecePath}/${key}.webp`;
+            img.onload = () => { imageCache[key] = img; checkDone(); };
+            img.onerror = () => { checkDone(); };
+        });
+
+        pieceKeys.forEach(key => {
+            const img = new Image();
+            img.src = `${piecePath}/${PIECE_MAP[key]}.webp`;
+            img.onload = () => { imageCache[key] = img; checkDone(); };
+            img.onerror = () => { checkDone(); };
+        });
+        
+        document.querySelectorAll('.piece-palette img').forEach(imgTag => {
+            const pieceCode = imgTag.dataset.piece;
+            if (pieceCode && PIECE_MAP[pieceCode]) {
+                imgTag.src = `${piecePath}/${PIECE_MAP[pieceCode]}.webp`;
+            }
         });
     });
 }
@@ -424,6 +518,27 @@ export function getCanvasCoords(logicX, logicY) {
     return { cx: paddingX + (drawX * cellX), cy: paddingY + (drawY * cellY) };
 }
 
+function drawMoveBadge() {
+    // Chỉ vẽ khi biểu đồ đã chạy xong, không ở chế độ xếp quân, và nước cờ có nhãn
+    if (!state.isChartAnalyzed || !state.lastMove || state.isEditMode || !state.currentNode || !state.currentNode.classification) return;
+
+    const toIccs = state.lastMove.substring(2, 4);
+    const toXY = vschess.i2b[toIccs];
+    const p2 = getCanvasCoords(toXY % 9, Math.floor(toXY / 9));
+
+    // Xử lý ngoại lệ: Nếu là missed_win thì dùng ảnh blunder
+    let badgeName = state.currentNode.classification;
+    if (badgeName === 'missed_win') badgeName = 'blunder';
+
+    const badgeImg = imageCache[badgeName];
+    if (badgeImg) {
+        const badgeSize = Math.round(pieceSize * 0.45); 
+        const bx = Math.round(p2.cx) + Math.round(pieceSize / 4) - Math.round(badgeSize * 0.15);
+        const by = Math.round(p2.cy) - Math.round(pieceSize / 2) - Math.round(badgeSize * 0.15);
+        ctx.drawImage(badgeImg, bx, by, badgeSize, badgeSize);
+    }
+}
+
 // VÒNG LẶP RENDER CHÍNH
 function renderLoop() {
     if (state.isStudioMode) {
@@ -441,6 +556,7 @@ function renderLoop() {
     drawAnimatingPiece();        // Vẽ quân đang bay
     drawSelectedPiece();         // <--- VẼ QUÂN ĐANG CHỌN PHÁT SÁNG NỔI LÊN TRÊN
     drawLegalMoveDots();         // Vẽ chấm xanh nước đi
+    drawMoveBadge();             // <--- VẼ BADGE ĐÁNH GIÁ NƯỚC ĐI TỪ BIỂU ĐỒ PHÂN TÍCH
     drawBestMoveArrowCanvas();   // Vẽ mũi tên AI
     drawUserDrawnLines();        // <--- VẼ CÁC ĐƯỜNG KẺ CHIẾN THUẬT DO NGƯỜI DÙNG KÉO THẢ
 
@@ -1028,6 +1144,18 @@ function drawBestMoveArrowCanvas() {
         ctx.fillText(rank, textX, textY + 1); 
     };
 
+    // TRƯỜNG HỢP SAU KHI PHÂN TÍCH: VẼ MŨI TÊN "AI" NẾU ĐI LỖI
+    if (state.isChartAnalyzed && state.currentNode && state.currentNode.parent) {
+        const cls = state.currentNode.classification;
+        const aiMove = state.currentNode.parent.aiBestMove;
+        
+        // Nếu nước hiện tại bị đánh giá là lỗi (inaccuracy, mistake, blunder) và có nước đề xuất
+        if (['balanced', 'inaccuracy', 'mistake', 'blunder', 'missed_win'].includes(cls) && aiMove) {
+            drawSingleArrow(aiMove, "#008a3eb9", "AI");
+            return; 
+        }
+    }
+
     // NẾU rê chuột vào một dòng PV cụ thể, vẽ chuỗi nước đi xem trước (PV Preview)
     if (state.hoveredPVLine && state.hoveredPVLine.pv) {
         const colors = ["#4caf4fbd", "#f44336bd", "#2196f3bd", "#ff9800bd"];
@@ -1233,6 +1361,17 @@ export function renderMoveHistory() {
     if (commentBox) commentBox.value = state.currentNode.comment || "";
     
     try { renderEvalGraph(); } catch(e) {}
+
+    if (state.isChartRunning && !state.isChartDrawing) {
+        import('./chart.js').then(chart => chart.refreshChartUI());
+    }
+    const reviewBox = document.getElementById('review-container');
+    if (reviewBox && reviewBox.style.display !== 'none') {
+        import('./chart.js').then(chart => {
+            chart.resetReviewCache(); 
+            chart.updateReviewUI();
+        });
+    }
     
     const moveCommentInput = document.getElementById('move-comment-input');
     const moveNoteSection = document.getElementById('move-note-section');

@@ -24,13 +24,20 @@ window.onload = async () => {
         const { studio } = await import('./js/studio.js');
         await studio.init();
     } else {
+        // Luôn đảm bảo không tự động kết nối vào phòng online khi vừa vào/tải lại trang
+        sessionStorage.removeItem('tuongky_active_room');
+        document.body.classList.remove('mode-online');
+
+        // Đảm bảo ẩn triệt để camera, đồng hồ và dải thông tin online
+        const topStrip = document.getElementById('online-player-strip-top');
+        const botStrip = document.getElementById('online-player-strip-bottom');
+        const roomBar = document.getElementById('online-room-bar');
+        if (topStrip) topStrip.style.display = 'none';
+        if (botStrip) botStrip.style.display = 'none';
+        if (roomBar) roomBar.style.display = 'none';
+
         // Truyền tham số thứ 2 là 'true' để hệ thống bóc LocalStorage ra dùng
         initGame(undefined, true);
-        
-        // Kiểm tra và khôi phục phòng online nếu vừa F5 hoặc kết nối lại
-        import('./js/online.js').then(m => {
-            if (m.checkAndResumeSavedRoom) m.checkAndResumeSavedRoom();
-        });
 
         // Lấy thông tin phiên bản từ file Service Worker để in ra Cài đặt
         fetchAppVersion();

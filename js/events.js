@@ -45,6 +45,7 @@ function setupStepper(stateKey, inputId, minusId, plusId, min, defaultMax, step,
     if (targetType === 'ai') targetObj = state.aiSettings;
     else if (targetType === 'app') targetObj = state.appSettings;
     else if (targetType === 'bot') targetObj = state.vsBotSettings;
+    else if (targetType === 'chart') targetObj = state.chartSettings;
 
     if (targetObj[stateKey] !== undefined) {
         input.value = targetObj[stateKey];
@@ -175,10 +176,25 @@ export async function switchMode(newMode, customFen = START_FEN) {
         state.appMode = newMode;
         state.appSettings.appMode = newMode;
 
-        document.body.classList.toggle('mode-online', newMode === 'online');
+        const isOnline = (newMode === 'online');
+        document.body.classList.toggle('mode-online', isOnline);
+
         const onlineBar = document.getElementById('online-room-bar');
         if (onlineBar) {
-            onlineBar.style.display = (newMode === 'online' && onlineState.roomCode) ? 'flex' : 'none';
+            onlineBar.style.display = (isOnline && onlineState && onlineState.roomCode) ? 'flex' : 'none';
+        }
+
+        const topStrip = document.getElementById('online-player-strip-top');
+        const botStrip = document.getElementById('online-player-strip-bottom');
+        if (topStrip) topStrip.style.display = (isOnline && onlineState && onlineState.roomCode) ? 'flex' : 'none';
+        if (botStrip) botStrip.style.display = (isOnline && onlineState && onlineState.roomCode) ? 'flex' : 'none';
+
+        if (!isOnline) {
+            import('./online.js').then(m => {
+                if (m.onlineState && m.onlineState.roomCode && m.leaveOnlineRoom) {
+                    m.leaveOnlineRoom();
+                }
+            });
         }
         
         try { storage.saveSystem(state.appSettings); } catch(e) {}
@@ -191,6 +207,80 @@ export async function switchMode(newMode, customFen = START_FEN) {
         
         hideLoading(); 
     }, 50);
+}
+    
+export function finishChartDrawing() {
+    import('./ui.js').then(ui => ui.hideAILoading());
+    state.isChartDrawing = false;
+    document.body.classList.remove('chart-drawing');
+
+    state.isChartAnalyzed = true; 
+    
+    let temp = state.rootNode;
+    while(temp.children.length > 0) {
+        temp = temp.children[temp.mainLineIndex];
+    }
+    
+    import('./report.js').then(report => {
+        state.chartReport = report.generateReportData();
+        
+        report.renderReportUI();
+        report.renderMistakesUI();
+        
+        import('./chart.js').then(chart => chart.refreshChartUI());
+    });
+
+    import('./game.js').then(game => {
+        game.instantJumpToNode(temp, true); 
+        
+        setTimeout(() => {
+            const activeBtn = document.getElementById('active-move-btn');
+            if (activeBtn) {
+                activeBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        }, 100);
+    });
+
+    import('./engine.js').then(engine => engine.forceStopEngine());
+    import('./board.js').then(b => {
+        b.renderMoveHistory(); 
+        b.renderBoardFull(state.currentSituation);
+    });
+    
+    showToast("Phân tích biểu đồ hoàn tất!");
+}
+
+export function exitChartMode() {
+    import('./ui.js').then(ui => ui.hideAILoading());
+    state.isChartRunning = false;
+    state.isChartDrawing = false;
+    
+    state.isChartAnalyzed = false; 
+
+    document.body.classList.remove('chart-running', 'chart-drawing');
+    
+    const btnChart = document.getElementById('btn-chart');
+    if (btnChart) btnChart.classList.remove('tool-active');
+    
+    import('./game.js').then(game => {
+        game.forceStopAIPlayers();
+        game.clearTreeAnalysisData(state.rootNode);
+    });
+
+    import('./engine.js').then(engine => engine.restoreEngineAfterChart());
+    
+    import('./chart.js').then(chart => chart.closeChartUI());
+
+    import('./board.js').then(b => {
+        b.clearArrow();
+        b.renderMoveHistory(); 
+        b.renderBoardFull(state.currentSituation);
+    });
+
+    setTimeout(() => {
+        const activeBtn = document.getElementById('active-move-btn');
+        if (activeBtn) activeBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 100);
 }
 
 export function initEvents() {
@@ -973,6 +1063,8 @@ export function initEvents() {
     setupStepper('cloudBookLimit', 'input-cloudlimit', 'btn-cloudlimit-minus', 'btn-cloudlimit-plus', 1, 50, 1, false, 'app');
     setupStepper('level', 'input-botlevel', 'btn-botlevel-minus', 'btn-botlevel-plus', 1, 10, 1, false, 'bot');
     setupStepper('level', 'input-setup-level', 'btn-setup-level-minus', 'btn-setup-level-plus', 1, 10, 1, false, 'bot');
+    setupStepper('customDepth', 'input-chart-depth', 'btn-chart-depth-minus', 'btn-chart-depth-plus', 10, 30, 1, false, 'chart');
+    setupStepper('customTime', 'input-chart-time', 'btn-chart-time-minus', 'btn-chart-time-plus', 1, 10, 1, false, 'chart');
     
     const inputBotStyle = document.getElementById('input-bot-style');
     if(inputBotStyle) {
@@ -2565,7 +2657,303 @@ export function initEvents() {
         }
         hideLoading();
     }
-    updateEngineToggleButtonUI();
+    // ==========================================
+    // CÁC SỰ KIỆN NÚT BẤM CHO CHỌN GIAO DIỆN (STYLE)
+    // ==========================================
+    let styleManifest = null;
+    let currentSelectionType = ''; 
+    let tempSelectedStyleObj = null; 
+    
+    function getStyleNameFromPath(manifestList, path) {
+        if (!manifestList) return "Mặc Định";
+        const found = manifestList.find(item => item.path === path);
+        return found ? found.name : "Mặc Định";
+    }
+
+    async function loadStyleManifest() {
+        if (styleManifest) return styleManifest;
+        try {
+            const response = await fetch('style/manifest.json');
+            styleManifest = await response.json();
+            return styleManifest;
+        } catch (e) {
+            console.error("Lỗi khi tải style/manifest.json", e);
+            return { boards: [], pieces: [] };
+        }
+    }
+
+    async function openStyleModal(type) {
+        showLoading("Đang tải danh sách...");
+        const manifest = await loadStyleManifest();
+        hideLoading();
+
+        currentSelectionType = type;
+        const isBoard = (type === 'board');
+        
+        document.getElementById('style-select-title').innerText = isBoard ? "Chọn Bàn Cờ" : "Chọn Quân Cờ";
+        
+        const listData = isBoard ? manifest.boards : manifest.pieces;
+        const savedPath = isBoard ? state.appSettings.boardStyle : state.appSettings.pieceStyle;
+        
+        tempSelectedStyleObj = listData.find(item => item.path === savedPath) || listData[0];
+
+        const elText = document.getElementById(isBoard ? 'current-board-name' : 'current-piece-name');
+        if (elText) elText.innerText = tempSelectedStyleObj.name;
+
+        const container = document.getElementById('style-list-container');
+        container.innerHTML = '';
+
+        if (!listData || listData.length === 0) {
+            container.innerHTML = '<div style="text-align: center; color: #888; padding: 20px 0;">Không tìm thấy dữ liệu</div>';
+        } else {
+            listData.forEach(item => {
+                const btn = document.createElement('button');
+                btn.className = 'style-item-btn';
+                btn.innerText = item.name;
+
+                if (item.path === tempSelectedStyleObj.path) {
+                    btn.classList.add('style-item-active');
+                }
+
+                btn.onclick = () => {
+                    container.querySelectorAll('.style-item-btn').forEach(b => b.classList.remove('style-item-active'));
+                    btn.classList.add('style-item-active');
+                    tempSelectedStyleObj = item; 
+                };
+
+                container.appendChild(btn);
+            });
+        }
+
+        import('./ui.js').then(ui => ui.openModal('style-select-modal'));
+    }
+
+    loadStyleManifest().then(manifest => {
+        const boardEl = document.getElementById('current-board-name');
+        if (boardEl) boardEl.innerText = getStyleNameFromPath(manifest.boards, state.appSettings.boardStyle);
+        
+        const pieceEl = document.getElementById('current-piece-name');
+        if (pieceEl) pieceEl.innerText = getStyleNameFromPath(manifest.pieces, state.appSettings.pieceStyle);
+    });
+
+    const rowBoardStyle = document.getElementById('row-board-style');
+    if (rowBoardStyle) {
+        rowBoardStyle.onclick = () => openStyleModal('board');
+        rowBoardStyle.onmouseenter = function() { this.style.backgroundColor = "#f5f5f5"; };
+        rowBoardStyle.onmouseleave = function() { this.style.backgroundColor = "transparent"; };
+    }
+
+    const rowPieceStyle = document.getElementById('row-piece-style');
+    if (rowPieceStyle) {
+        rowPieceStyle.onclick = () => openStyleModal('piece');
+        rowPieceStyle.onmouseenter = function() { this.style.backgroundColor = "#f5f5f5"; };
+        rowPieceStyle.onmouseleave = function() { this.style.backgroundColor = "transparent"; };
+    }
+
+    const btnStyleCancel = document.getElementById('btn-style-cancel');
+    if (btnStyleCancel) {
+        btnStyleCancel.onclick = () => {
+            import('./ui.js').then(ui => ui.closeModal('style-select-modal'));
+        };
+    }
+
+    const btnStyleConfirm = document.getElementById('btn-style-confirm');
+    if (btnStyleConfirm) {
+        btnStyleConfirm.onclick = () => {
+            import('./ui.js').then(ui => ui.closeModal('style-select-modal'));
+            
+            const isBoard = (currentSelectionType === 'board');
+            const savedPath = isBoard ? state.appSettings.boardStyle : state.appSettings.pieceStyle;
+
+            if (savedPath === tempSelectedStyleObj.path) return;
+
+            showLoading("Đang áp dụng giao diện...");
+            
+            const startLoadTime = Date.now();
+
+            import('./board.js').then(boardModule => {
+                let loadPromise;
+
+                if (isBoard) {
+                    state.appSettings.boardStyle = tempSelectedStyleObj.path;
+                    loadPromise = boardModule.reloadBoardImage(tempSelectedStyleObj.path);
+                    const el = document.getElementById('current-board-name');
+                    if (el) el.innerText = tempSelectedStyleObj.name;
+                } else {
+                    state.appSettings.pieceStyle = tempSelectedStyleObj.path;
+                    loadPromise = boardModule.reloadPieceImages(tempSelectedStyleObj.path);
+                    const el = document.getElementById('current-piece-name');
+                    if (el) el.innerText = tempSelectedStyleObj.name;
+                }
+
+                storage.saveSystem(state.appSettings);
+
+                loadPromise.then(() => {
+                    const elapsed = Date.now() - startLoadTime;
+                    const remainingTime = Math.max(0, 500 - elapsed);
+                    
+                    setTimeout(() => {
+                        hideLoading();
+                        showToast(`Đã thay đổi ${isBoard ? "Bàn cờ" : "Quân cờ"} thành công!`);
+                    }, remainingTime);
+                });
+            });
+        };
+    }
+
+    // ==========================================
+    // CÁC SỰ KIỆN CHO TÍNH NĂNG BIỂU ĐỒ PHÂN TÍCH
+    // ==========================================
+    
+    const CHART_PRESETS = {
+        very_fast: { depth: 12, time: 1 },
+        fast:      { depth: 14, time: 2 },
+        normal:    { depth: 16, time: 3 },
+        deep:      { depth: 18, time: 5 },
+        very_deep: { depth: 20, time: 8 }
+    };
+
+    const chartModeSelect = document.getElementById('chart-mode-select');
+    const chartPresetSelect = document.getElementById('chart-preset-select');
+    const chartPresetGroup = document.getElementById('chart-preset-group');
+    const chartCustomGroup = document.getElementById('chart-custom-group');
+
+    if (chartModeSelect && chartPresetSelect) {
+        chartModeSelect.value = state.chartSettings.mode || 'preset';
+        chartPresetSelect.value = state.chartSettings.preset || 'fast';
+
+        const updateChartSetupUI = () => {
+            if (chartModeSelect.value === 'preset') {
+                chartPresetGroup.style.display = 'flex';
+                chartCustomGroup.style.display = 'none';
+            } else {
+                chartPresetGroup.style.display = 'none';
+                chartCustomGroup.style.display = 'block';
+            }
+        };
+
+        chartModeSelect.onchange = (e) => {
+            state.chartSettings.mode = e.target.value;
+            updateChartSetupUI();
+        };
+
+        chartPresetSelect.onchange = (e) => {
+            state.chartSettings.preset = e.target.value;
+        };
+
+        updateChartSetupUI();
+    }
+
+    const btnChart = document.getElementById('btn-chart');
+    if (btnChart) {
+        btnChart.onclick = () => {
+            if (state.isChartRunning) {
+                exitChartMode();
+            } else {
+                openModal('chart-setup-modal');
+            }
+        };
+    }
+
+    const btnChartCancel = document.getElementById('btn-chart-cancel');
+    if (btnChartCancel) {
+        btnChartCancel.onclick = () => { closeModal('chart-setup-modal'); };
+    }
+
+    const btnChartConfirm = document.getElementById('btn-chart-confirm');
+    if (btnChartConfirm) {
+        btnChartConfirm.onclick = () => {
+            closeModal('chart-setup-modal');
+
+            if (state.chartSettings.mode === 'preset') {
+                const selectedPreset = CHART_PRESETS[state.chartSettings.preset];
+                state.chartSettings.runDepth = selectedPreset.depth;
+                state.chartSettings.runTime = selectedPreset.time;
+            } else {
+                state.chartSettings.runDepth = state.chartSettings.customDepth;
+                state.chartSettings.runTime = state.chartSettings.customTime;
+            }
+
+            state.customArrows = [];
+            
+            const pikaTab = document.querySelector('.ai-tab-btn[data-tab="pikafish"]');
+            if (pikaTab) pikaTab.click();
+
+            import('./game.js').then(game => {
+                game.forceStopAIPlayers(); 
+                if (state.isAutoPlaying) game.toggleAutoPlay();
+            });
+
+            const btnAnalyze = document.getElementById('btn-analyze');
+            if (btnAnalyze) {
+                btnAnalyze.classList.remove('tool-active');
+                state.isAnalyzing = false;
+            }
+
+            import('./engine.js').then(engine => {
+                engine.forceStopEngine(); 
+                
+                setTimeout(() => {
+                    state.isChartRunning = true;
+                    state.isChartDrawing = true;
+                    document.body.classList.add('chart-running', 'chart-drawing'); 
+                    
+                    if (btnChart) btnChart.classList.add('tool-active');
+                    
+                    engine.startChartAnalysisProcess();
+                }, 300);
+            });
+        };
+    }
+
+    // SỰ KIỆN NÚT CHÚ GIẢI BIỂU ĐỒ (LEGEND)
+    const btnChartLegend = document.getElementById('btn-chart-legend');
+    if (btnChartLegend) {
+        btnChartLegend.onclick = () => {
+            if (state.isChartDrawing || !state.isChartAnalyzed) return;
+
+            const container = document.getElementById('legend-list-container');
+            if (container) {
+                const legendData = [
+                    { id: 'best',       name: 'Tốt nhất',        percent: '98 - 100%' },
+                    { id: 'excellent',  name: 'Xuất sắc',        percent: '90 - 97%' },
+                    { id: 'good',       name: 'Tốt',             percent: '80 - 89%' },
+                    { id: 'balanced',   name: 'Cân bằng',        percent: '70 - 79%' },
+                    { id: 'inaccuracy', name: 'Thiếu chính xác', percent: '55 - 69%' },
+                    { id: 'mistake',    name: 'Sai lầm',         percent: '40 - 54%' },
+                    { id: 'blunder',    name: 'Sai lầm nặng',    percent: '0 - 39%' }
+                ];
+
+                let htmlContent = '';
+                
+                legendData.forEach(item => {
+                    htmlContent += `
+                        <div class="legend-row">
+                            <img class="legend-icon" src="style/tags/${item.id}.webp" alt="${item.name}">
+                            <span class="legend-name">${item.name} :</span>
+                            <div class="legend-dots"></div>
+                            <span class="legend-desc">Phù hợp ${item.percent}</span>
+                        </div>
+                    `;
+                });
+
+                htmlContent += `
+                    <div class="legend-row" style="margin-top: 10px; border-top: 1px solid #eee; padding-top: 15px;">
+                        <svg viewBox="0 0 24 24" fill="#008a3eb9" style="width: 26px; height: 26px; margin-right: 17px; filter: drop-shadow(1px 2px 2px rgba(0,0,0,0.2));">
+                            <path d="M12 2L2 12h5v8h10v-8h5L12 2z"/>
+                        </svg>
+                        <span class="legend-desc" style="color: #008a3eb9; font-weight: bold; text-align: left; flex: 1;">
+                            Mũi tên màu xanh lá = Nước đi được AI đề xuất.
+                        </span>
+                    </div>
+                `;
+
+                container.innerHTML = htmlContent;
+            }
+
+            import('./ui.js').then(ui => ui.openModal('chart-legend-modal'));
+        };
+    }
 
     // ==========================================
     // KHỞI TẠO CÁC SỰ KIỆN CHO PHÒNG CHƠI ONLINE
@@ -2889,14 +3277,20 @@ function initOnlineEvents() {
                 return;
             }
             const mode = timerCustomType ? timerCustomType.value : 'increment';
-            let settings = { mode };
+            const enabled = (mode !== 'none');
+            let settings = {
+                enabled: enabled,
+                mode: mode
+            };
             if (mode === 'increment') {
                 const base = parseInt(timerInputBase?.value, 10) || 10;
                 const inc = parseInt(timerInputInc?.value, 10) || 0;
                 settings.baseMinutes = base;
+                settings.incSeconds = inc;
                 settings.incrementSeconds = inc;
             } else if (mode === 'per_move') {
                 const perMove = parseInt(timerInputPermove?.value, 10) || 90;
+                settings.moveLimitSeconds = perMove;
                 settings.perMoveSeconds = perMove;
             }
             sendTimerSettings(settings);

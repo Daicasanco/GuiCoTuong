@@ -154,6 +154,9 @@
                             d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z" />
                     </svg>
                 </div>
+                <div class="tool-btn-outer hide-on-edit hide-on-vsbot hide-on-blind hide-on-puzzle hide-on-online" id="btn-chart" title="Biểu đồ phân tích">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon tool-btn"><path d="M12 16v5"/><path d="M16 14.639V21"/><path d="M20 10.656V21"/><path d="m22 3-8.646 8.646a.5.5 0 0 1-.708 0L9.354 8.354a.5.5 0 0 0-.707 0L2 15"/><path d="M4 18.463V21"/><path d="M8 14.656V21"/></svg>
+                </div>
                 <div class="tool-btn-outer" id="btn-flip" title="Lật bàn cờ">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#000000"
                         stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="icon tool-btn">
@@ -480,6 +483,12 @@
                             <div id="multipv-list-container" style="padding: 0 10px 10px 10px;">
                                 <div style="text-align: center; color: #888; margin-top: 15px;">Chưa bật phân tích</div>
                             </div>
+                            <div id="chart-wrapper" style="display: none; width: 100%; flex: 1; min-height: 200px; position: relative; margin-top: 10px; border-radius: 6px; border: 1px solid #ddd; background: #fffdf0; overflow: hidden;">
+                                <button id="btn-chart-legend" title="Chú giải đánh giá" disabled>?</button>
+                                <div id="chart-container" style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; overflow-x: auto; overflow-y: hidden; box-sizing: border-box;">
+                                    <canvas id="analysis-chart"></canvas>
+                                </div>
+                            </div>
                         </div>
 
                         <div class="ai-content" id="tab-title"
@@ -551,6 +560,7 @@
                             <div id="cloudbook-list-container" style="flex: 1; overflow-y: auto;">
                                 <div style="text-align: center; color: #888; margin-top: 10px;">Chưa có dữ liệu</div>
                             </div>
+                            <div id="report-container" style="display: none; flex-direction: column; width: 100%; padding-bottom: 20px;"></div>
                         </div>
 
                         <!-- TAB THƯ VIỆN CỜ -->
@@ -614,6 +624,14 @@
                             style="display: none; flex-direction: column; flex: 1; overflow: hidden;">
                             <textarea id="comment-box" maxlength="10000"
                                 placeholder="Nhập ghi chú cho nước cờ này... (Tối đa 10000 ký tự)"></textarea>
+                            <div id="mistakes-container" style="display: none; width: 100%; height: 100%; flex-direction: row; gap: 5px; padding: 10px; box-sizing: border-box; background: #fdfdfd;">
+                                <!-- Cột Đỏ -->
+                                <div id="mistake-col-red" style="flex: 1; display: flex; flex-direction: column; gap: 6px; overflow-y: auto;"></div>
+                                <!-- Đường phân cách giữa -->
+                                <div style="width: 1px; background: #eee; margin: 0 2px;"></div>
+                                <!-- Cột Đen -->
+                                <div id="mistake-col-black" style="flex: 1; display: flex; flex-direction: column; gap: 6px; overflow-y: auto;"></div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1398,45 +1416,22 @@
                     </div>
                 </div>
 
-                <div class="settings-row">
-                    <div class="settings-label">
-                        <strong>Số nước giới hạn</strong>
-                        <span>Thoát sách sau X nước (Max 50)</span>
-                    </div>
-                    <div class="stepper-group">
-                        <button class="btn-stepper" id="btn-cloudlimit-minus"><svg xmlns="http://www.w3.org/2000/svg"
-                                width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"
-                                class="lucide lucide-minus-icon lucide-minus">
-                                <path d="M5 12h14" />
-                            </svg></button>
-                        <input type="number" id="input-cloudlimit" min="1" max="50" step="1" value="10">
-                        <button class="btn-stepper" id="btn-cloudlimit-plus"><svg xmlns="http://www.w3.org/2000/svg"
-                                width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"
-                                class="lucide lucide-plus-icon lucide-plus">
-                                <path d="M5 12h14" />
-                                <path d="M12 5v14" />
-                            </svg></button>
-                    </div>
-                </div>
-
                 <div class="settings-group-title">Giao diện & Âm thanh</div>
 
-                <div class="settings-row">
-                    <div class="settings-label">
-                        <strong>Theme Mặt Bàn Cờ</strong>
-                        <span>Chọn kiểu giao diện bàn cờ</span>
+                <div class="settings-row" id="row-board-style" style="cursor: pointer; padding-top: 10px; padding-bottom: 10px;">
+                    <div class="settings-label" style="flex: 1; pointer-events: none;">
+                        <strong style="font-size: 15px; color: #333;">Bàn cờ</strong>
                     </div>
-                    <select id="board-theme-select"
-                        style="padding: 5px; border-radius: 4px; border: 1px solid #ccc; outline: none; font-size: 13px; font-weight: bold; color: #333;">
-                        <option value="default">Mặc định (Cổ điển)</option>
-                        <option value="wood">Gỗ Tự Nhiên</option>
-                        <option value="marble">Cẩm Thạch</option>
-                        <option value="dark">Modern Dark</option>
-                        <option value="contest">Giải Đấu</option>
-                        <option value="modern">Gỗ Hiện Đại</option>
-                    </select>
+                    <span id="current-board-name" style="color: #008a3e; font-size: 14px; font-weight: bold; margin-right: 10px; pointer-events: none;">Mặc Định</span>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#666" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events: none;"><path d="m9 18 6-6-6-6"/></svg>
+                </div>
+
+                <div class="settings-row" id="row-piece-style" style="cursor: pointer; padding-top: 10px; padding-bottom: 10px;">
+                    <div class="settings-label" style="flex: 1; pointer-events: none;">
+                        <strong style="font-size: 15px; color: #333;">Quân cờ</strong>
+                    </div>
+                    <span id="current-piece-name" style="color: #008a3e; font-size: 14px; font-weight: bold; margin-right: 10px; pointer-events: none;">Mặc Định</span>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#666" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events: none;"><path d="m9 18 6-6-6-6"/></svg>
                 </div>
 
                 <div class="settings-row">
@@ -1836,6 +1831,105 @@
                     style="color: #666; border-right: 1px solid #eee;">Hủy</button>
                 <button class="modal-btn-half" id="btn-del-puz-confirm" style="color: #d32f2f; font-weight: bold;">Xác
                     Nhận</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL CHỌN GIAO DIỆN -->
+    <div id="style-select-modal" class="modal-overlay" style="z-index: 1002;">
+        <div class="modal-content" style="width: 300px; max-height: 60vh;">
+            <div class="modal-header" id="style-select-title" style="justify-content: center; font-size: 18px; color: #333;">
+                Chọn Bàn Cờ
+            </div>
+            <div class="modal-body" style="padding: 15px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; background: #fdfdfd;" id="style-list-container">
+            </div>
+            <div style="display: flex; border-top: 1px solid #eee;">
+                <button class="modal-btn-half" id="btn-style-cancel" style="color: #666; border-right: 1px solid #eee;">Hủy</button>
+                <button class="modal-btn-half" id="btn-style-confirm" style="color: #008a3e; font-weight: bold;">Xác Nhận</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL THIẾT LẬP BIỂU ĐỒ PHÂN TÍCH -->
+    <div id="chart-setup-modal" class="modal-overlay">
+        <div class="modal-content" style="width: 320px;">
+            <div class="modal-header" style="justify-content: center; font-size: 18px; color: #333;">
+                Thiết Lập Biểu Đồ
+            </div>
+            
+            <div class="modal-body settings-body" style="padding: 0;">
+                <!-- Chọn chế độ Mặc định / Tự chọn -->
+                <div class="settings-row">
+                    <div class="settings-label">
+                        <strong>Kiểu thiết lập</strong>
+                        <span>Cách cấu hình AI</span>
+                    </div>
+                    <select id="chart-mode-select" style="padding: 5px; border-radius: 4px; border: 1px solid #ccc; outline: none; font-size: 14px; font-weight: bold; color: #333;">
+                        <option value="preset">Mặc định</option>
+                        <option value="custom">Tự chọn</option>
+                    </select>
+                </div>
+
+                <!-- Nhóm thiết lập Mặc định -->
+                <div class="settings-row" id="chart-preset-group">
+                    <div class="settings-label">
+                        <strong>Mức độ phân tích</strong>
+                        <span>Tốc độ & Độ sâu</span>
+                    </div>
+                    <select id="chart-preset-select" style="padding: 5px; border-radius: 4px; border: 1px solid #ccc; outline: none; font-size: 14px; font-weight: bold; color: #333; max-width: 140px;">
+                        <option value="very_fast">Rất nhanh</option>
+                        <option value="fast">Nhanh</option>
+                        <option value="normal">Bình thường</option>
+                        <option value="deep">Sâu</option>
+                        <option value="very_deep">Rất sâu</option>
+                    </select>
+                </div>
+
+                <!-- Nhóm thiết lập Tự chọn (Giấu đi nếu chọn Mặc định) -->
+                <div id="chart-custom-group" style="display: none;">
+                    <div class="settings-row">
+                        <div class="settings-label">
+                            <strong>Độ sâu phân tích</strong>
+                            <span>(Tối đa 30 depth)</span>
+                        </div>
+                        <div class="stepper-group">
+                            <button class="btn-stepper" id="btn-chart-depth-minus"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/></svg></button>
+                            <input type="number" id="input-chart-depth" min="10" max="30" step="1" value="15">
+                            <button class="btn-stepper" id="btn-chart-depth-plus"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg></button>
+                        </div>
+                    </div>
+
+                    <div class="settings-row">
+                        <div class="settings-label">
+                            <strong>Thời gian / 1 nước</strong>
+                            <span>(Tối đa 10 giây)</span>
+                        </div>
+                        <div class="stepper-group">
+                            <button class="btn-stepper" id="btn-chart-time-minus"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/></svg></button>
+                            <input type="number" id="input-chart-time" min="1" max="10" step="1" value="1">
+                            <button class="btn-stepper" id="btn-chart-time-plus"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg></button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div style="display: flex; border-top: 1px solid #eee;">
+                <button class="modal-btn-half" id="btn-chart-cancel" style="color: #666; border-right: 1px solid #eee;">Hủy</button>
+                <button class="modal-btn-half" id="btn-chart-confirm" style="color: #1a73e8; font-weight: bold;">Xác nhận</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL BẢNG CHÚ GIẢI BIỂU ĐỒ -->
+    <div id="chart-legend-modal" class="modal-overlay" style="z-index: 1002;">
+        <div class="modal-content" style="width: 340px;">
+            <div class="modal-header" style="justify-content: center; font-size: 18px; color: #333;">
+                Chú Giải Đánh Giá
+            </div>
+            <div class="modal-body" style="padding: 15px; display: flex; flex-direction: column; gap: 12px; background: #fdfdfd;" id="legend-list-container">
+            </div>
+            <div style="display: flex; border-top: 1px solid #eee;">
+                <button class="modal-btn-half" onclick="document.getElementById('chart-legend-modal').classList.remove('show'); setTimeout(() => document.getElementById('chart-legend-modal').style.display='none', 300)" style="color: #1a73e8; font-weight: bold; width: 100%;">Đóng</button>
             </div>
         </div>
     </div>

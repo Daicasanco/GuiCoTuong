@@ -1,0 +1,102 @@
+{
+  "boards": [
+    {
+      "name": "Mặc Định",
+      "path": "style/1-mac_dinh"
+    },
+    {
+      "name": "Phỉ Thủy",
+      "path": "style/2-phi_thuy"
+    },
+    {
+      "name": "Giấy Nhám",
+      "path": "style/3-giay_nham"
+    },
+    {
+      "name": "Gỗ Mun",
+      "path": "style/4-go_mun"
+    },
+    {
+      "name": "Vân Gỗ",
+      "path": "style/5-van_go"
+    },
+    {
+      "name": "Galaxy",
+      "path": "style/6-galaxy"
+    },
+    {
+      "name": "Đá Cổ",
+      "path": "style/7-da_co"
+    },
+    {
+      "name": "Hoàng Kim",
+      "path": "style/8-hoang_kim"
+    },
+    {
+      "name": "Kim Loại",
+      "path": "style/9-kim_loai"
+    },
+    {
+      "name": "Thủy Mặc",
+      "path": "style/10-thuy_mac"
+    },
+    {
+      "name": "Hoa Sen",
+      "path": "style/11-hoa_sen"
+    },
+    {
+      "name": "Gỗ Đỏ",
+      "path": "style/12-go_do"
+    }
+  ],
+ "pieces": [
+    {
+      "name": "Mặc Định",
+      "path": "style/1-mac_dinh"
+    },
+    {
+      "name": "Phỉ Thủy",
+      "path": "style/2-phi_thuy"
+    },
+    {
+      "name": "Hắc Hồng Ngọc",
+      "path": "style/3-giay_nham"
+    },
+    {
+      "name": "Hắc Bạch",
+      "path": "style/4-go_mun"
+    },
+    {
+      "name": "Vân Gỗ",
+      "path": "style/5-van_go"
+    },
+    {
+      "name": "Galaxy",
+      "path": "style/6-galaxy"
+    },
+    {
+      "name": "Đá Cổ",
+      "path": "style/7-da_co"
+    },
+    {
+      "name": "Hoàng Kim",
+      "path": "style/8-hoang_kim"
+    },
+    {
+      "name": "Kim Loại",
+      "path": "style/9-kim_loai"
+    },
+    {
+      "name": "Bạch Ngọc",
+      "path": "style/10-thuy_mac"
+    },
+    {
+      "name": "Hoa Sen",
+      "path": "style/11-hoa_sen"
+    },
+    {
+      "name": "Gỗ Đỏ",
+      "path": "style/12-go_do"
+    }
+ ]
+}

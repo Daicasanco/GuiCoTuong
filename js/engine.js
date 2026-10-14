@@ -1,16 +1,24 @@
 // js/engine.js
 import { drawBestMoveArrow, clearArrow } from './board.js';
-import { customTranslator, executeMove } from './game.js'; 
+import { customTranslator, executeMove, instantJumpToNode } from './game.js'; 
 import { showToast, showAILoading, hideAILoading } from './ui.js';
 import { getStrictLegalMoves } from './rules.js';
 import { state, storage } from './state.js'; // Thêm storage vào đây
 import { queryLocalBookWorker } from './localbook.js';
+import { normalizeScore, evaluateMoveScore, classifyMove } from './analyzer.js';
+import { initChartUI, addChartPoint } from './chart.js';
 
 let pendingAction = null; 
 let stopTimeoutId = null; 
 let isEngineSearching = false; 
 let cloudBookTimeoutId = null; 
 let lastUiUpdateTime = 0;
+
+let chartCurrentNode = null;
+let chartLatestCP = null;
+let chartLatestMate = null;
+let chartTimerId = null;
+let chartNodeStartTime = 0;
 
 export let engineOutputListeners = [];
 
@@ -506,7 +514,7 @@ function handleBookResults(movesList, isAITurn, isRedTurn, container, fen) {
 }
 
 export function triggerEngineEvaluation() {
-    if (!state.engineModule || state.isEditMode || state.appMode === 'online') return;
+    if (!state.engineModule || state.isEditMode || state.appMode === 'online' || state.isChartRunning || state.isChartDrawing) return;
     pendingAction = 'eval';
     handleStateTransition();
 }
@@ -744,6 +752,80 @@ export function handleEngineOutput(text) {
                 }
             } catch(e) {}
         }
+    }
+
+    if (state.isChartRunning) {
+        if (text.includes("score cp")) {
+            const cpMatch = text.match(/score cp (-?\d+)/);
+            if (cpMatch) {
+                chartLatestCP = parseInt(cpMatch[1]);
+                chartLatestMate = null;
+            }
+        }
+        if (text.includes("score mate")) {
+            const mateMatch = text.match(/score mate (-?\d+)/);
+            if (mateMatch) {
+                chartLatestMate = parseInt(mateMatch[1]);
+                chartLatestCP = null;
+            }
+        }
+
+        if (text.startsWith("bestmove")) {
+            if (chartTimerId) {
+                clearTimeout(chartTimerId);
+                chartTimerId = null;
+            }
+            isEngineSearching = false;
+
+            if (!chartCurrentNode) return;
+
+            const parts = text.split(" ");
+            const bestMoveStr = parts[1] && parts[1] !== "(none)" ? parts[1].trim() : null;
+
+            const isRedTurnNow = chartCurrentNode.fen.split(" ")[1] === "w";
+            const rawScoreObj = { cp: chartLatestCP, mate: chartLatestMate };
+            const rawNorm = normalizeScore(rawScoreObj);
+            const absoluteScore = isRedTurnNow ? rawNorm : -rawNorm;
+
+            chartCurrentNode.scoreObj = rawScoreObj;
+            chartCurrentNode.normalizedScore = absoluteScore;
+            chartCurrentNode.aiBestMove = bestMoveStr;
+
+            if (chartCurrentNode.parent && chartCurrentNode.parent.normalizedScore !== null) {
+                const bestScore = chartCurrentNode.parent.normalizedScore;
+                const playedScore = absoluteScore;
+                const turnColor = chartCurrentNode.parent.fen.split(" ")[1]; // w hoặc b
+                
+                const moveScore = evaluateMoveScore(bestScore, playedScore, turnColor);
+
+                const isMissedWin = (turnColor === 'w' && bestScore >= 29000 && playedScore < 29000) || 
+                                    (turnColor === 'b' && bestScore <= -29000 && playedScore > -29000);
+
+                chartCurrentNode.moveScore = moveScore;
+                chartCurrentNode.classification = classifyMove(moveScore, isMissedWin);
+            }
+
+            const graphScore = Math.max(-2000, Math.min(2000, absoluteScore));
+            const isRedMoved = !isRedTurnNow;
+            
+            if (chartCurrentNode !== state.rootNode) {
+                addChartPoint(graphScore, isRedMoved, chartCurrentNode.classification);
+            }
+
+            if (chartCurrentNode.children.length > 0) {
+                chartCurrentNode = chartCurrentNode.children[chartCurrentNode.mainLineIndex];
+                
+                chartLatestCP = null;
+                chartLatestMate = null;
+
+                setTimeout(() => {
+                    if (state.isChartDrawing) analyzeNextChartNode(); 
+                }, 100); 
+            } else {
+                import('./events.js').then(ev => ev.finishChartDrawing());
+            }
+        }
+        return; // BỎ QUA CODE NORMAL KHI ĐANG CHẠY BIỂU ĐỒ
     }
 
     if (text.startsWith("info depth")) {
@@ -993,5 +1075,100 @@ export function forceStopEngine() {
 export function sendEngineCommand(cmd) {
     if (state.engineModule && typeof state.engineModule.sendCommand === 'function') {
         state.engineModule.sendCommand(cmd);
+    }
+}
+
+export async function startChartAnalysisProcess() {
+    if (!state.rootNode || state.rootNode.children.length === 0) {
+        import('./ui.js').then(ui => ui.showToast("Bàn cờ chưa có nước đi nào để phân tích!"));
+        import('./events.js').then(ev => ev.exitChartMode());
+        return;
+    }
+    
+    import('./ui.js').then(ui => ui.showAILoading());
+
+    state.isChartAnalyzed = false;
+    import('./game.js').then(game => game.clearTreeAnalysisData(state.rootNode));
+
+    let tempCountNode = state.rootNode;
+    let totalNodes = 1; // Tính cả Node gốc (Start pos)
+    while (tempCountNode.children.length > 0) {
+        totalNodes++;
+        tempCountNode = tempCountNode.children[tempCountNode.mainLineIndex];
+    }
+    state.chartTotalMoves = totalNodes;
+
+    initChartUI(); // Reset Canvas
+
+    if (state.engineModule) {
+        state.engineModule.sendCommand("stop");
+        state.engineModule.sendCommand(`setoption name Skill Level value 20`);
+        state.engineModule.sendCommand(`setoption name MultiPV value 1`);
+    }
+
+    // Bắt đầu vẽ luôn
+    if (state.rootNode) {
+        chartCurrentNode = state.rootNode; 
+        instantJumpToNode(chartCurrentNode, true);
+    }
+    
+    setTimeout(() => {
+        chartLatestCP = null;
+        chartLatestMate = null;
+        if (chartCurrentNode) analyzeNextChartNode();
+    }, 100);
+}
+
+function analyzeNextChartNode() {
+    if (chartTimerId) {
+        clearTimeout(chartTimerId);
+        chartTimerId = null;
+    }
+
+    instantJumpToNode(chartCurrentNode, true);
+
+    chartLatestCP = null;
+    chartLatestMate = null;
+    chartNodeStartTime = Date.now();
+    
+    const maxTimeMs = state.chartSettings.runTime * 1000;
+    const maxDepth = state.chartSettings.runDepth;
+
+    if (state.engineModule) {
+        state.engineModule.sendCommand(`position fen ${chartCurrentNode.fen}`);
+    }
+    
+    setTimeout(() => {
+        if (!state.isChartDrawing) return; 
+
+        if (state.engineModule) {
+            state.engineModule.sendCommand(`go depth ${maxDepth}`); 
+            isEngineSearching = true;
+        }
+
+        chartTimerId = setTimeout(() => {
+            if (isEngineSearching && state.isChartDrawing && state.engineModule) {
+                state.engineModule.sendCommand("stop");
+            }
+        }, maxTimeMs);
+
+    }, 50); 
+}
+
+export function restoreEngineAfterChart() {
+    console.log("Khôi phục cài đặt Engine sau khi tắt Biểu đồ...");
+    
+    if (state.engineModule) {
+        state.engineModule.sendCommand("stop");
+        state.engineModule.sendCommand(`setoption name Skill Level value ${state.aiSettings.skill}`);
+        state.engineModule.sendCommand(`setoption name MultiPV value ${state.aiSettings.multiPV}`);
+    }
+
+    isEngineSearching = false;
+
+    if (state.isAnalyzing) {
+        triggerEngineEvaluation();
+    } else {
+        pendingAction = null;
     }
 }
