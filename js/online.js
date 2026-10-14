@@ -1157,7 +1157,8 @@ function appendChatMessage(data) {
 
     const info = document.createElement('div');
     info.className = 'chat-msg-info';
-    info.textContent = `${isMine ? `Bạn (${onlineState.myUserName})` : (data.senderName || 'Đối thủ')} • ${data.time || ''}`;
+    const timeStr = data.time || new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Ho_Chi_Minh', hour12: false });
+    info.textContent = `${isMine ? `Bạn (${onlineState.myUserName})` : (data.senderName || 'Đối thủ')} • ${timeStr}`;
 
     row.appendChild(bubble);
     row.appendChild(info);

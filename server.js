@@ -1,4 +1,5 @@
 // file: server.js
+process.env.TZ = 'Asia/Ho_Chi_Minh';
 const express = require('express');
 const http = require('http');
 const path = require('path');
@@ -6,6 +7,16 @@ const multer = require('multer');
 const FormData = require('form-data');
 const fetch = require('node-fetch'); // Đảm bảo bạn đã cài node-fetch@2
 const { WebSocketServer } = require('ws');
+
+// Helper định dạng giờ Việt Nam (GMT+7)
+function getVietnamTimeString() {
+    return new Date().toLocaleTimeString('vi-VN', {
+        hour: '2-digit',
+        minute: '2-digit',
+        timeZone: 'Asia/Ho_Chi_Minh',
+        hour12: false
+    });
+}
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -875,7 +886,7 @@ wss.on('connection', (ws) => {
                     senderRole: 'system',
                     senderName: 'Hệ thống',
                     text: `👁️ ${specName} đã vào phòng xem cờ.`,
-                    time: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
+                    time: getVietnamTimeString()
                 }, ws);
                 return;
             }
@@ -949,7 +960,7 @@ wss.on('connection', (ws) => {
                 senderRole: 'system',
                 senderName: 'Hệ thống',
                 text: `👁️ ${specName} đã vào phòng xem cờ.`,
-                time: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
+                time: getVietnamTimeString()
             }, ws);
             return;
         }
@@ -1170,7 +1181,7 @@ wss.on('connection', (ws) => {
                 senderRole: 'system',
                 senderName: 'Hệ thống',
                 text: `⚔️ Chủ phòng đã chọn ${targetSpec.userName} vào thi đấu thay thế!`,
-                time: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
+                time: getVietnamTimeString()
             });
             return;
         }
@@ -1285,7 +1296,7 @@ wss.on('connection', (ws) => {
             if (ws.isSpectator && !senderName.includes('Khán giả')) {
                 senderName = `[Khán giả] ${senderName}`;
             }
-            const time = new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+            const time = getVietnamTimeString();
 
             const payload = {
                 type: 'CHAT_MESSAGE',
