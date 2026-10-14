@@ -740,6 +740,7 @@ async function enterOnlineGame(initialFen, myColor) {
     await initGame(initialFen || START_FEN, false);
     updateOnlineRoomBar();
     updatePlayerStripsUI();
+    toggleChatBox(true);
     window.dispatchEvent(new Event('resize'));
 }
 
@@ -974,8 +975,10 @@ export function leaveOnlineRoom() {
 
     const topStrip = document.getElementById('online-player-strip-top');
     const botStrip = document.getElementById('online-player-strip-bottom');
+    const chatBox = document.getElementById('online-chat-box');
     if (topStrip) topStrip.style.display = 'none';
     if (botStrip) botStrip.style.display = 'none';
+    if (chatBox) chatBox.style.display = 'none';
 
     // Chuyển lại về chế độ Phân Tích mặc định
     import('./events.js').then(m => {

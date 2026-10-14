@@ -1354,8 +1354,7 @@ export function renderMoveHistory() {
         container.appendChild(btn);
     }
     setTimeout(() => {
-        const activeBtn = document.getElementById('active-move-btn');
-        if (activeBtn) activeBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        scrollToActiveMove();
     }, 50); 
     const commentBox = document.getElementById('comment-box');
     if (commentBox) commentBox.value = state.currentNode.comment || "";
@@ -1404,5 +1403,16 @@ export function autoAdjustNoteTextareaHeight() {
     if (el.value && el.value.trim().length > 0) {
         const newH = Math.min(Math.max(el.scrollHeight + 2, 36), 130);
         el.style.height = newH + 'px';
+    }
+}
+
+export function scrollToActiveMove() {
+    const container = document.getElementById('move-list-container');
+    const activeBtn = document.getElementById('active-move-btn');
+    if (container && activeBtn) {
+        const containerRect = container.getBoundingClientRect();
+        const btnRect = activeBtn.getBoundingClientRect();
+        const targetScroll = container.scrollTop + (btnRect.top - containerRect.top) - (container.clientHeight / 2) + (btnRect.height / 2);
+        container.scrollTo({ top: Math.max(0, targetScroll), behavior: 'smooth' });
     }
 }

@@ -234,10 +234,7 @@ export function finishChartDrawing() {
         game.instantJumpToNode(temp, true); 
         
         setTimeout(() => {
-            const activeBtn = document.getElementById('active-move-btn');
-            if (activeBtn) {
-                activeBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            }
+            import('./board.js').then(b => b.scrollToActiveMove());
         }, 100);
     });
 
@@ -278,8 +275,7 @@ export function exitChartMode() {
     });
 
     setTimeout(() => {
-        const activeBtn = document.getElementById('active-move-btn');
-        if (activeBtn) activeBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        import('./board.js').then(b => b.scrollToActiveMove());
     }, 100);
 }
 
@@ -3120,6 +3116,15 @@ function initOnlineEvents() {
     if (btnCloseSpectatorsModal) {
         btnCloseSpectatorsModal.onclick = () => {
             closeModal('online-spectators-modal');
+        };
+    }
+
+    // 7.3 Lật góc nhìn bàn cờ online
+    const btnOnlineFlip = document.getElementById('btn-online-flip');
+    if (btnOnlineFlip) {
+        btnOnlineFlip.onclick = () => {
+            const btnFlip = document.getElementById('btn-flip');
+            if (btnFlip) btnFlip.click();
         };
     }
 

@@ -220,7 +220,50 @@
         </header>
 
         <main id="main-content">
-            <!-- CỘT TRÁI -->
+            <!-- CỘT TRÁI (CHỈ HIỆN KHI CHƠI ONLINE): CÁC NÚT TÍNH NĂNG VÀ PHÒNG ĐẤU -->
+            <div id="online-room-bar" style="display: none;">
+                <!-- HÀNG 1: THÔNG TIN PHÒNG, TÊN NGƯỜI CHƠI VÀ NÚT RỜI -->
+                <div class="online-bar-header">
+                    <div class="online-room-tag" id="btn-copy-roomcode" title="Bấm để sao chép mã và link mời">
+                        <span>Phòng:</span> <strong id="online-bar-roomcode">------</strong> 📋
+                    </div>
+                    <div class="online-role-badge">
+                        <span id="online-bar-myname" class="online-user-name" title="Bấm để đổi tên hiển thị" style="cursor: pointer; font-weight: bold; color: #0f172a; text-decoration: underline dotted;">Bạn ✏️</span> • <span id="online-bar-myside">🔴 Đỏ</span> • <span id="online-bar-oppstatus">⏳ Đang chờ...</span>
+                    </div>
+                    <button class="btn-online-leave-top" id="btn-online-leave" title="Rời khỏi phòng">🚪 Rời</button>
+                </div>
+
+                <!-- HÀNG 2: BÁO LƯỢT ĐI VÀ CÔNG CỤ (MIC + CAM + XEM + LẬT + CHAT) -->
+                <div class="online-bar-actions">
+                    <div class="online-turn-badge" id="online-bar-turn">
+                        👉 TỚI LƯỢT BẠN
+                    </div>
+                    <div class="online-tools-group">
+                        <button class="btn-online-tool" id="btn-online-mic" title="Bật/Tắt Microphone">🎙️ Mic: Tắt</button>
+                        <button class="btn-online-tool" id="btn-online-cam" title="Bật/Tắt Camera (Chỉ 2 người đấu)">📹 Cam: Tắt</button>
+                        <button class="btn-online-tool" id="btn-online-spectators" title="Danh sách người xem">👁️ <span id="online-spectator-count">0</span></button>
+                        <button class="btn-online-tool" id="btn-online-flip" title="Lật góc nhìn bàn cờ">🔄 Lật cờ</button>
+                        <button class="btn-online-tool" id="btn-online-chat" title="Mở hộp tin nhắn trò chuyện">💬 Chat <span id="online-chat-badge" class="chat-badge" style="display: none;">0</span></button>
+                    </div>
+                </div>
+
+                <!-- HÀNG 3: QUYỀN CHỦ PHÒNG (NẾU LÀ CHỦ PHÒNG) -->
+                <div id="online-bar-host-controls" class="online-bar-host-row" style="display: none;">
+                    <div class="online-host-title">👑 Quyền Chủ Phòng</div>
+                    <div class="online-host-buttons">
+                        <button class="btn-host-action" id="btn-online-timer-setup" title="Cài đặt đồng hồ tính giờ">⏱️ Đồng Hồ</button>
+                        <button class="btn-host-action" id="btn-online-manage-players" title="Chọn khán giả vào đánh">👥 Đổi Người</button>
+                        <button class="btn-host-action" id="btn-online-set-turn" title="Chọn lượt đi tiếp theo">🎯 Đổi Lượt</button>
+                        <button class="btn-host-action" id="btn-online-swap" title="Hoán đổi phe Đỏ và Đen">🔄 Đổi Bên</button>
+                        <button class="btn-host-action" id="btn-online-reset" title="Khởi tạo ván mới">🆕 Ván Mới</button>
+                    </div>
+                </div>
+
+                <!-- Audio ẩn cho Voice Chat đàm thoại WebRTC -->
+                <audio id="online-remote-audio" autoplay playsinline style="display: none;"></audio>
+            </div>
+
+            <!-- CỘT GIỮA: BÀN CỜ -->
             <section id="board-section">
 
 
@@ -356,67 +399,6 @@
                         style="border-left: none; border-top: 2px solid rgba(0,0,0,0.1); padding-left: 0; padding-top: 10px;">
                         Bên Đỏ<br>Đi Trước
                     </div>
-                </div>
-
-                <!-- THANH TRẠNG THÁI PHÒNG ONLINE (NẰM TRÊN CÙNG CỘT PHẢI KHI ĐÁNH ONLINE) -->
-                <div id="online-room-bar" style="display: none;">
-                    <!-- HÀNG 1: THÔNG TIN PHÒNG, TÊN NGƯỜI CHƠI VÀ NÚT RỜI -->
-                    <div class="online-bar-header">
-                        <div class="online-room-tag" id="btn-copy-roomcode" title="Bấm để sao chép mã và link mời">
-                            <span>Phòng:</span> <strong id="online-bar-roomcode">------</strong> 📋
-                        </div>
-                        <div class="online-role-badge">
-                            <span id="online-bar-myname" class="online-user-name" title="Bấm để đổi tên hiển thị" style="cursor: pointer; font-weight: bold; color: #0f172a; text-decoration: underline dotted;">Bạn ✏️</span> • <span id="online-bar-myside">🔴 Đỏ</span> • <span id="online-bar-oppstatus">⏳ Đang chờ...</span>
-                        </div>
-                        <button class="btn-online-leave-top" id="btn-online-leave" title="Rời khỏi phòng">🚪 Rời</button>
-                    </div>
-
-                    <!-- HÀNG 2: BÁO LƯỢT ĐI VÀ CÔNG CỤ (MIC + CAM + XEM + CHAT) -->
-                    <div class="online-bar-actions">
-                        <div class="online-turn-badge" id="online-bar-turn">
-                            👉 TỚI LƯỢT BẠN
-                        </div>
-                        <div class="online-tools-group">
-                            <button class="btn-online-tool" id="btn-online-mic" title="Bật/Tắt Microphone">🎙️ Mic: Tắt</button>
-                            <button class="btn-online-tool" id="btn-online-cam" title="Bật/Tắt Camera (Chỉ 2 người đấu)">📹 Cam: Tắt</button>
-                            <button class="btn-online-tool" id="btn-online-spectators" title="Danh sách người xem">👁️ <span id="online-spectator-count">0</span></button>
-                            <button class="btn-online-tool" id="btn-online-chat" title="Mở hộp tin nhắn trò chuyện">💬 Chat <span id="online-chat-badge" class="chat-badge" style="display: none;">0</span></button>
-                        </div>
-                    </div>
-
-                    <!-- HÀNG 3: QUYỀN CHỦ PHÒNG (NẾU LÀ CHỦ PHÒNG) -->
-                    <div id="online-bar-host-controls" class="online-bar-host-row" style="display: none;">
-                        <button class="btn-host-action" id="btn-online-timer-setup" title="Cài đặt đồng hồ tính giờ">⏱️ Đồng Hồ</button>
-                        <button class="btn-host-action" id="btn-online-manage-players" title="Chọn khán giả vào đánh">👥 Đổi Người</button>
-                        <button class="btn-host-action" id="btn-online-set-turn" title="Chọn lượt đi tiếp theo">🎯 Đổi Lượt</button>
-                        <button class="btn-host-action" id="btn-online-swap" title="Hoán đổi phe Đỏ và Đen">🔄 Đổi Bên</button>
-                        <button class="btn-host-action" id="btn-online-reset" title="Khởi tạo ván mới">🆕 Ván Mới</button>
-                    </div>
-
-                    <!-- HỘP THOẠI TRÒ CHUYỆN ONLINE -->
-                    <div id="online-chat-box" style="display: none;">
-                        <div class="online-chat-header">
-                            <span>💬 Trò Chuyện Trực Tiếp</span>
-                            <button id="btn-close-chat" class="btn-chat-close" title="Thu gọn">✕</button>
-                        </div>
-                        <div class="online-chat-messages" id="online-chat-messages">
-                            <div class="chat-system-msg">Chào mừng bạn vào phòng đấu! Hãy giao lưu vui vẻ.</div>
-                        </div>
-                        <div class="online-chat-chips">
-                            <span class="chat-chip" data-msg="Xin chào kỳ hữu!">👋 Chào bạn</span>
-                            <span class="chat-chip" data-msg="Nước đi hay quá!">👏 Nước hay!</span>
-                            <span class="chat-chip" data-msg="Cho tôi xin nghĩ chút nhé.">🤔 Xin nghĩ tí</span>
-                            <span class="chat-chip" data-msg="Ván này căng đấy!">🔥 Căng đấy</span>
-                            <span class="chat-chip" data-msg="Cảm ơn kỳ hữu! Rất vui được giao lưu.">🤝 Cảm ơn bạn</span>
-                        </div>
-                        <form class="online-chat-form" id="online-chat-form">
-                            <input type="text" id="online-chat-input" placeholder="Nhập tin nhắn..." maxlength="150" autocomplete="off">
-                            <button type="submit" id="btn-send-chat">Gửi</button>
-                        </form>
-                    </div>
-
-                    <!-- Audio ẩn cho Voice Chat đàm thoại WebRTC -->
-                    <audio id="online-remote-audio" autoplay playsinline style="display: none;"></audio>
                 </div>
 
                 <div id="panel-ai" class="hide-on-edit">
@@ -634,6 +616,28 @@
                             </div>
                         </div>
                     </div>
+                </div>
+
+                <!-- HỘP THOẠI TRÒ CHUYỆN ONLINE (BÊN PHẢI CÙNG BIÊN BẢN KHI ĐÁNH ONLINE) -->
+                <div id="online-chat-box" style="display: none;">
+                    <div class="online-chat-header">
+                        <span>💬 Trò Chuyện Trực Tiếp</span>
+                        <button id="btn-close-chat" class="btn-chat-close" title="Thu gọn">✕</button>
+                    </div>
+                    <div class="online-chat-messages" id="online-chat-messages">
+                        <div class="chat-system-msg">Chào mừng bạn vào phòng đấu! Hãy giao lưu vui vẻ.</div>
+                    </div>
+                    <div class="online-chat-chips">
+                        <span class="chat-chip" data-msg="Xin chào kỳ hữu!">👋 Chào bạn</span>
+                        <span class="chat-chip" data-msg="Nước đi hay quá!">👏 Nước hay!</span>
+                        <span class="chat-chip" data-msg="Cho tôi xin nghĩ chút nhé.">🤔 Xin nghĩ tí</span>
+                        <span class="chat-chip" data-msg="Ván này căng đấy!">🔥 Căng đấy</span>
+                        <span class="chat-chip" data-msg="Cảm ơn kỳ hữu! Rất vui được giao lưu.">🤝 Cảm ơn bạn</span>
+                    </div>
+                    <form class="online-chat-form" id="online-chat-form">
+                        <input type="text" id="online-chat-input" placeholder="Nhập tin nhắn..." maxlength="150" autocomplete="off">
+                        <button type="submit" id="btn-send-chat">Gửi</button>
+                    </form>
                 </div>
             </section>
         </main>

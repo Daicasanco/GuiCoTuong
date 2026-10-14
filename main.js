@@ -32,9 +32,11 @@ window.onload = async () => {
         const topStrip = document.getElementById('online-player-strip-top');
         const botStrip = document.getElementById('online-player-strip-bottom');
         const roomBar = document.getElementById('online-room-bar');
+        const chatBox = document.getElementById('online-chat-box');
         if (topStrip) topStrip.style.display = 'none';
         if (botStrip) botStrip.style.display = 'none';
         if (roomBar) roomBar.style.display = 'none';
+        if (chatBox) chatBox.style.display = 'none';
 
         // Truyền tham số thứ 2 là 'true' để hệ thống bóc LocalStorage ra dùng
         initGame(undefined, true);
