@@ -12,7 +12,7 @@ import { uploadLocalBook, deleteLocalBook, loadLocalBookFromDB } from './localbo
 import { renderEvalGraph } from './analysis/eval-graph.js';
 import { runAutoGameReview } from './analysis/auto-review.js';
 import { runAIAnnotation } from './analysis/ai-annotate.js';
-import { createOnlineRoom, joinOnlineRoom, leaveOnlineRoom, sendHostSetTurn, sendHostSwapSides, sendResetGame, updateOnlineRoomBar, onlineState, toggleOnlineVoiceMic, sendOnlineChat, toggleChatBox } from './online.js';
+import { createOnlineRoom, joinOnlineRoom, leaveOnlineRoom, sendHostSetTurn, sendHostSwapSides, sendResetGame, updateOnlineRoomBar, onlineState, toggleOnlineVoiceMic, sendOnlineChat, toggleChatBox, getOnlineUserName, setOnlineUserName } from './online.js';
 
 let pendingDeletePuzKey = "";
 
@@ -2579,7 +2579,43 @@ function initOnlineEvents() {
     if (menuOnline) {
         menuOnline.onclick = () => {
             closeModal('main-menu-modal');
+            const inputUsername = document.getElementById('input-online-username');
+            if (inputUsername) inputUsername.value = getOnlineUserName();
             openModal('online-room-modal');
+        };
+    }
+
+    // 1.1. Cài đặt Tên hiển thị (Username)
+    const inputUsername = document.getElementById('input-online-username');
+    const btnSaveUsername = document.getElementById('btn-save-username');
+    if (inputUsername) {
+        inputUsername.value = getOnlineUserName();
+        if (btnSaveUsername) {
+            btnSaveUsername.onclick = () => {
+                const name = inputUsername.value.trim();
+                if (name) {
+                    setOnlineUserName(name);
+                    showToast('✅ Đã lưu tên hiển thị: ' + name);
+                }
+            };
+        }
+        inputUsername.addEventListener('keyup', (e) => {
+            if (e.key === 'Enter') {
+                if (btnSaveUsername) btnSaveUsername.click();
+            }
+        });
+    }
+
+    // Bấm vào tên trên thanh phòng để đổi tên nhanh
+    const myNameEl = document.getElementById('online-bar-myname');
+    if (myNameEl) {
+        myNameEl.onclick = () => {
+            const current = getOnlineUserName();
+            const newName = prompt('Nhập tên hiển thị mới của bạn:', current);
+            if (newName !== null && newName.trim().length > 0) {
+                setOnlineUserName(newName.trim());
+                showToast('✅ Đã đổi tên thành: ' + newName.trim());
+            }
         };
     }
 

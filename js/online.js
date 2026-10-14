@@ -5,12 +5,57 @@ import { initGame, executeMove } from './game.js';
 import { START_FEN } from './config.js';
 import { clearUserDrawLines, renderBoardFull } from './board.js';
 
+// Lấy tên hiển thị từ thiết bị hoặc tự sinh mặc định
+export function getOnlineUserName() {
+    let name = localStorage.getItem('tuongky_username');
+    if (!name || !name.trim()) {
+        name = 'Kỳ thủ ' + Math.floor(100 + Math.random() * 900);
+        localStorage.setItem('tuongky_username', name);
+    }
+    return name.trim();
+}
+
+// Cập nhật tên hiển thị của người dùng (lưu vào cache thiết bị và đồng bộ phòng)
+export function setOnlineUserName(newName) {
+    const clean = String(newName || '').trim().slice(0, 25);
+    if (!clean) return false;
+
+    localStorage.setItem('tuongky_username', clean);
+    onlineState.myUserName = clean;
+
+    const inputName = document.getElementById('input-online-username');
+    if (inputName) inputName.value = clean;
+
+    updateOnlineRoomBar();
+
+    if (onlineState.ws && onlineState.roomCode) {
+        onlineState.ws.send(JSON.stringify({
+            type: 'SET_USERNAME',
+            roomCode: onlineState.roomCode,
+            userName: clean
+        }));
+    }
+    return true;
+}
+
+// Lấy hoặc tạo UID cố định của người dùng trong trình duyệt
+export function getOrCreateUserId() {
+    let uid = localStorage.getItem('tuongky_online_uid');
+    if (!uid) {
+        uid = 'u_' + Math.random().toString(36).substring(2, 9) + Date.now().toString(36);
+        localStorage.setItem('tuongky_online_uid', uid);
+    }
+    return uid;
+}
+
 export const onlineState = {
     connected: false,
     roomCode: null,
     isHost: false,
     myColor: 'red',          // 'red' | 'black'
     opponentColor: 'black',  // 'red' | 'black'
+    myUserName: getOnlineUserName(),
+    opponentUserName: 'Đối thủ',
     currentTurn: 'w',        // 'w' | 'b'
     opponentJoined: false,
     opponentConnected: false,
@@ -22,16 +67,6 @@ export const onlineState = {
     // Chat UI state
     unreadChatCount: 0
 };
-
-// Lấy hoặc tạo UID cố định của người dùng trong trình duyệt
-export function getOrCreateUserId() {
-    let uid = localStorage.getItem('tuongky_online_uid');
-    if (!uid) {
-        uid = 'u_' + Math.random().toString(36).substring(2, 9) + Date.now().toString(36);
-        localStorage.setItem('tuongky_online_uid', uid);
-    }
-    return uid;
-}
 
 export function isOnlineMode() {
     return state.appMode === 'online';
@@ -77,14 +112,15 @@ export function connectOnlineSocket() {
                     reconnectTimer = null;
                 }
 
-                // Nếu đang có phòng cờ dở dang (ví dụ vừa bị rớt mạng hoặc F5), tự động gửi yêu cầu tái kết nối
+                // Nếu đang có phòng cờ dở dang (rớt mạng hoặc F5), tự động gửi yêu cầu tái kết nối
                 const savedRoom = sessionStorage.getItem('tuongky_active_room') || onlineState.roomCode;
                 if (savedRoom) {
                     console.log(`🔄 [Online] Đang tự động kết nối lại vào phòng [${savedRoom}]...`);
                     ws.send(JSON.stringify({
                         type: 'JOIN_ROOM',
                         roomCode: savedRoom,
-                        userId: getOrCreateUserId()
+                        userId: getOrCreateUserId(),
+                        userName: getOnlineUserName()
                     }));
                 }
 
@@ -155,6 +191,8 @@ function handleOnlineMessage(data) {
         onlineState.myColor = data.myColor;
         onlineState.opponentColor = data.guestColor;
         onlineState.currentTurn = data.currentTurn;
+        onlineState.myUserName = data.myUserName || getOnlineUserName();
+        onlineState.opponentUserName = 'Đang chờ...';
         onlineState.opponentJoined = false;
         onlineState.opponentConnected = false;
         sessionStorage.setItem('tuongky_active_room', data.roomCode);
@@ -173,6 +211,8 @@ function handleOnlineMessage(data) {
         onlineState.myColor = data.myColor;
         onlineState.opponentColor = data.hostColor;
         onlineState.currentTurn = data.currentTurn;
+        onlineState.myUserName = data.myUserName || getOnlineUserName();
+        onlineState.opponentUserName = data.opponentUserName || (data.hostColor === 'red' ? 'Chủ phòng (Đỏ)' : 'Chủ phòng (Đen)');
         onlineState.opponentJoined = true;
         onlineState.opponentConnected = true;
         sessionStorage.setItem('tuongky_active_room', data.roomCode);
@@ -191,6 +231,8 @@ function handleOnlineMessage(data) {
         onlineState.myColor = data.myColor;
         onlineState.opponentColor = data.opponentColor;
         onlineState.currentTurn = data.currentTurn;
+        onlineState.myUserName = data.myUserName || getOnlineUserName();
+        onlineState.opponentUserName = data.opponentUserName || 'Đối thủ';
         onlineState.opponentJoined = !!data.opponentJoined;
         onlineState.opponentConnected = !!data.opponentJoined;
         sessionStorage.setItem('tuongky_active_room', data.roomCode);
@@ -206,7 +248,8 @@ function handleOnlineMessage(data) {
     if (type === 'PLAYER_JOINED') {
         onlineState.opponentJoined = true;
         onlineState.opponentConnected = true;
-        showToast('👥 ' + (data.message || 'Đối thủ đã tham gia phòng!'));
+        if (data.opponentUserName) onlineState.opponentUserName = data.opponentUserName;
+        showToast('👥 ' + (data.message || `${onlineState.opponentUserName} đã tham gia phòng!`));
         updateOnlineRoomBar();
         return;
     }
@@ -214,7 +257,7 @@ function handleOnlineMessage(data) {
     // 5. ĐỐI THỦ TẠM THỜI MẤT MẠNG (ĐANG CHỜ 90S)
     if (type === 'PLAYER_DISCONNECTED') {
         onlineState.opponentConnected = false;
-        showToast('⏳ ' + (data.message || 'Đối thủ tạm mất mạng, đang chờ 90s...'));
+        showToast('⏳ ' + (data.message || `${onlineState.opponentUserName} tạm mất mạng, đang chờ 90s...`));
         updateOnlineRoomBar();
         return;
     }
@@ -223,12 +266,23 @@ function handleOnlineMessage(data) {
     if (type === 'PLAYER_RECONNECTED') {
         onlineState.opponentConnected = true;
         onlineState.opponentJoined = true;
-        showToast('🟢 ' + (data.message || 'Đối thủ đã kết nối lại phòng!'));
+        if (data.opponentUserName) onlineState.opponentUserName = data.opponentUserName;
+        showToast('🟢 ' + (data.message || `${onlineState.opponentUserName} đã kết nối lại phòng!`));
         updateOnlineRoomBar();
         return;
     }
 
-    // 7. ĐƯỢC CHUYỂN QUYỀN CHỦ PHÒNG (TRONG PHÒNG CỐ ĐỊNH 013579)
+    // 7. ĐỐI THỦ ĐỔI TÊN HIỂN THỊ
+    if (type === 'OPPONENT_RENAMED') {
+        if (data.newName) {
+            onlineState.opponentUserName = data.newName;
+            showToast(`👤 Đối thủ đã đổi tên thành: ${data.newName}`);
+            updateOnlineRoomBar();
+        }
+        return;
+    }
+
+    // 8. ĐƯỢC CHUYỂN QUYỀN CHỦ PHÒNG (TRONG PHÒNG CỐ ĐỊNH 013579)
     if (type === 'PROMOTED_TO_HOST') {
         onlineState.isHost = true;
         showToast('👑 ' + (data.message || 'Bạn đã trở thành Chủ phòng mới!'));
@@ -236,7 +290,7 @@ function handleOnlineMessage(data) {
         return;
     }
 
-    // 8. ĐỐI THỦ ĐI QUÂN
+    // 9. ĐỐI THỦ ĐI QUÂN
     if (type === 'OPPONENT_MOVE') {
         onlineState.currentTurn = data.currentTurn;
         if (data.moveCommand) {
@@ -246,7 +300,7 @@ function handleOnlineMessage(data) {
         return;
     }
 
-    // 9. CHỦ PHÒNG CẬP NHẬT BÀN CỜ (XẾP QUÂN)
+    // 10. CHỦ PHÒNG CẬP NHẬT BÀN CỜ (XẾP QUÂN)
     if (type === 'BOARD_UPDATED') {
         onlineState.currentTurn = data.currentTurn;
         showToast('🛠️ ' + (data.message || 'Chủ phòng đã cập nhật thế cờ mới!'));
@@ -257,7 +311,7 @@ function handleOnlineMessage(data) {
         return;
     }
 
-    // 10. THAY ĐỔI LƯỢT ĐI
+    // 11. THAY ĐỔI LƯỢT ĐI
     if (type === 'TURN_CHANGED') {
         onlineState.currentTurn = data.currentTurn;
         showToast('🎯 ' + (data.message || 'Lượt đi đã thay đổi!'));
@@ -275,7 +329,7 @@ function handleOnlineMessage(data) {
         return;
     }
 
-    // 11. ĐỔI BÊN
+    // 12. ĐỔI BÊN
     if (type === 'SIDES_SWAPPED') {
         onlineState.myColor = data.myColor;
         onlineState.opponentColor = data.opponentColor;
@@ -288,7 +342,7 @@ function handleOnlineMessage(data) {
         return;
     }
 
-    // 12. VÁN MỚI
+    // 13. VÁN MỚI
     if (type === 'GAME_RESET') {
         onlineState.currentTurn = data.currentTurn || 'w';
         showToast('🆕 ' + (data.message || 'Ván cờ mới bắt đầu!'));
@@ -303,7 +357,7 @@ function handleOnlineMessage(data) {
         return;
     }
 
-    // 13. CHỦ PHÒNG RỜI ĐI HẲN
+    // 14. CHỦ PHÒNG RỜI ĐI HẲN
     if (type === 'HOST_LEFT') {
         showToast('🚪 ' + (data.message || 'Chủ phòng đã rời phòng!'));
         sessionStorage.removeItem('tuongky_active_room');
@@ -316,23 +370,24 @@ function handleOnlineMessage(data) {
         return;
     }
 
-    // 14. KHÁCH RỜI ĐI HẲN
+    // 15. KHÁCH RỜI ĐI HẲN
     if (type === 'GUEST_LEFT') {
         showToast('🚪 ' + (data.message || 'Đối thủ đã rời đi. Đang đợi người chơi khác...'));
         onlineState.opponentJoined = false;
         onlineState.opponentConnected = false;
+        onlineState.opponentUserName = 'Đang chờ...';
         stopVoiceChat();
         updateOnlineRoomBar();
         return;
     }
 
-    // 15. TIN NHẮN CHAT MỚI
+    // 16. TIN NHẮN CHAT MỚI
     if (type === 'CHAT_MESSAGE') {
         appendChatMessage(data);
         return;
     }
 
-    // 16. WEBRTC SIGNALING RELAY (VOICE CHAT)
+    // 17. WEBRTC SIGNALING RELAY (VOICE CHAT)
     if (type === 'WEBRTC_OFFER') {
         handleWebRTCOffer(data);
         return;
@@ -350,7 +405,7 @@ function handleOnlineMessage(data) {
         return;
     }
 
-    // 17. BÁO LỖI
+    // 18. BÁO LỖI
     if (type === 'ERROR') {
         showToast('❌ ' + (data.message || 'Đã xảy ra lỗi!'));
         return;
@@ -393,6 +448,7 @@ export async function createOnlineRoom(hostColor = 'red') {
         ws.send(JSON.stringify({
             type: 'CREATE_ROOM',
             userId: getOrCreateUserId(),
+            userName: getOnlineUserName(),
             hostColor: hostColor,
             initialFen: initialFen
         }));
@@ -417,6 +473,7 @@ export async function joinOnlineRoom(roomCode) {
         ws.send(JSON.stringify({
             type: 'JOIN_ROOM',
             userId: getOrCreateUserId(),
+            userName: getOnlineUserName(),
             roomCode: code
         }));
     } catch (e) {
@@ -536,10 +593,11 @@ export function updateOnlineRoomBar() {
     const roomCodeEl = document.getElementById('online-bar-roomcode');
     if (roomCodeEl) roomCodeEl.textContent = onlineState.roomCode;
 
-    const myRoleEl = document.getElementById('online-bar-role');
-    if (myRoleEl) {
-        myRoleEl.textContent = onlineState.isHost ? 'Chủ phòng' : 'Khách';
-        myRoleEl.style.color = onlineState.isHost ? '#d97706' : '#2563eb';
+    // Hiển thị tên người dùng và vai trò
+    const myNameEl = document.getElementById('online-bar-myname');
+    if (myNameEl) {
+        const roleStr = onlineState.isHost ? 'Chủ' : 'Khách';
+        myNameEl.innerHTML = `<strong>${onlineState.myUserName}</strong> (${roleStr}) ✏️`;
     }
 
     const mySideEl = document.getElementById('online-bar-myside');
@@ -554,22 +612,22 @@ export function updateOnlineRoomBar() {
     const oppStatusEl = document.getElementById('online-bar-oppstatus');
     if (oppStatusEl) {
         if (onlineState.opponentJoined && onlineState.opponentConnected) {
-            oppStatusEl.innerHTML = '<span style="color: #16a34a; font-weight: bold;">🟢 Đã vào</span>';
+            oppStatusEl.innerHTML = `<span style="color: #16a34a; font-weight: bold;" title="Đối thủ">🟢 ${onlineState.opponentUserName}</span>`;
         } else if (onlineState.opponentJoined && !onlineState.opponentConnected) {
-            oppStatusEl.innerHTML = '<span style="color: #ef4444; font-weight: bold;">⏳ Rớt mạng (90s)</span>';
+            oppStatusEl.innerHTML = `<span style="color: #ef4444; font-weight: bold;" title="Đối thủ tạm rớt mạng">⏳ ${onlineState.opponentUserName} (90s)</span>`;
         } else {
-            oppStatusEl.innerHTML = '<span style="color: #ea580c; font-weight: bold;">⏳ Đang chờ</span>';
+            oppStatusEl.innerHTML = '<span style="color: #ea580c; font-weight: bold;">⏳ Chờ đối thủ...</span>';
         }
     }
 
     const turnIndicatorEl = document.getElementById('online-bar-turn');
     if (turnIndicatorEl) {
         if (!onlineState.opponentJoined && onlineState.isHost) {
-            turnIndicatorEl.innerHTML = '<span style="color: #ea580c;">⏳ Chờ khách...</span>';
+            turnIndicatorEl.innerHTML = '<span style="color: #ea580c;">⏳ Chờ đối thủ vào...</span>';
         } else if (isMyTurn) {
-            turnIndicatorEl.innerHTML = '<span style="color: #16a34a; font-weight: bold;">👉 LƯỢT BẠN</span>';
+            turnIndicatorEl.innerHTML = '<span style="color: #16a34a; font-weight: bold;">👉 LƯỢT CỦA BẠN</span>';
         } else {
-            turnIndicatorEl.innerHTML = '<span style="color: #64748b;">⏳ Đợi đối thủ</span>';
+            turnIndicatorEl.innerHTML = `<span style="color: #64748b;">⏳ Đợi ${onlineState.opponentUserName || 'đối thủ'}</span>`;
         }
     }
 
@@ -629,6 +687,7 @@ export function sendOnlineChat(text) {
     onlineState.ws.send(JSON.stringify({
         type: 'CHAT',
         roomCode: onlineState.roomCode,
+        senderName: getOnlineUserName(),
         text: msg
     }));
 }
@@ -647,7 +706,7 @@ function appendChatMessage(data) {
 
     const info = document.createElement('div');
     info.className = 'chat-msg-info';
-    info.textContent = `${isMine ? 'Bạn' : data.senderName} • ${data.time || ''}`;
+    info.textContent = `${isMine ? `Bạn (${onlineState.myUserName})` : (data.senderName || 'Đối thủ')} • ${data.time || ''}`;
 
     row.appendChild(bubble);
     row.appendChild(info);
@@ -842,10 +901,11 @@ function sendVoiceStatus(isActive) {
 }
 
 function handleVoiceStatus(data) {
+    const oppName = onlineState.opponentUserName || 'Đối thủ';
     if (data.isMicActive) {
-        showToast('🎙️ Đối thủ đã bật Microphone đàm thoại.');
+        showToast(`🎙️ ${oppName} đã bật Microphone.`);
     } else {
-        showToast('🔇 Đối thủ đã tắt Microphone.');
+        showToast(`🔇 ${oppName} đã tắt Microphone.`);
     }
 }
 

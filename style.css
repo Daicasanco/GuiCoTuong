@@ -1831,13 +1831,13 @@ body.studio-recording #studio-top-bar {
     border-color: #94a3b8;
 }
 
-/* KHI Ở CHẾ ĐỘ ONLINE (body.mode-online): TỰ ĐỘNG THU NHỎ CHIỀU CAO BÀN CỜ ĐỂ DÀNH CHỖ CHO THANH PHÒNG */
+/* KHI Ở CHẾ ĐỘ ONLINE (body.mode-online): BÀN CỜ VẪN GIỮ KÍCH THƯỚC ĐẦY ĐỦ VÌ THANH PHÒNG NẰM BÊN PHẢI */
 body.mode-online #board-section {
-    width: calc((100dvh - 180px) * (380 / 420));
+    width: calc((100dvh - 110px) * (380 / 420));
     max-width: 100%;
 }
 body.mode-online #chess-board-area {
-    max-width: calc((100dvh - 180px) * (380 / 420));
+    max-width: calc((100dvh - 110px) * (380 / 420));
 }
 
 @media (max-aspect-ratio: 1/1), (max-width: 768px) {
@@ -1929,6 +1929,28 @@ body.mode-online #move-note-section {
 }
 body.mode-online .ai-tab-btn {
     display: none !important;
+}
+
+/* Hạ thấp và thu gọn biên bản nước đi khi đánh online (không chiếm nhiều diện tích) */
+body.mode-online #panel-history {
+    flex: 0 0 auto !important;
+    max-height: 240px !important;
+    min-height: 120px !important;
+    border-radius: 8px;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+    margin-top: 2px;
+}
+body.mode-online #move-list-container {
+    padding: 4px;
+    gap: 3px;
+}
+body.mode-online .move-box {
+    min-height: 26px !important;
+    padding: 3px 8px !important;
+    font-size: 12.5px !important;
+}
+body.mode-online .online-user-name:hover {
+    color: #008a3e !important;
 }
 
 /* Các nút công cụ Online (Mic, Chat) */

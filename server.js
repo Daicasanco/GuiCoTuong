@@ -433,6 +433,7 @@ wss.on('connection', (ws) => {
 
         const { type } = data;
         const userId = data.userId ? String(data.userId).trim() : null;
+        const userName = data.userName ? String(data.userName).trim().slice(0, 25) : null;
 
         // 1. TẠO PHÒNG MỚI (PHÒNG RIÊNG TƯ)
         if (type === 'CREATE_ROOM') {
@@ -441,11 +442,12 @@ wss.on('connection', (ws) => {
             const guestColor = hostColor === 'red' ? 'black' : 'red';
             const fen = data.initialFen || DEFAULT_XIANGQI_FEN;
             const currentTurn = fen.split(' ')[1] || 'w';
+            const hostName = userName || 'Chủ phòng';
 
             const room = {
                 code: roomCode,
                 isPermanent: false,
-                host: { ws, userId, color: hostColor, connected: true, disconnectTimer: null },
+                host: { ws, userId, userName: hostName, color: hostColor, connected: true, disconnectTimer: null },
                 guest: null,
                 guestColor: guestColor,
                 fen: fen,
@@ -457,13 +459,15 @@ wss.on('connection', (ws) => {
             ws.roomCode = roomCode;
             ws.isHost = true;
             ws.userId = userId;
+            ws.userName = hostName;
 
-            console.log(`🏠 [Online] Phòng mới được tạo: [${roomCode}] bởi Chủ phòng (${hostColor}) [UID: ${userId}]`);
+            console.log(`🏠 [Online] Phòng mới được tạo: [${roomCode}] bởi ${hostName} (${hostColor}) [UID: ${userId}]`);
 
             ws.send(JSON.stringify({
                 type: 'ROOM_CREATED',
                 roomCode,
                 myColor: hostColor,
+                myUserName: hostName,
                 guestColor,
                 fen,
                 currentTurn
@@ -495,19 +499,23 @@ wss.on('connection', (ws) => {
                         clearTimeout(room.host.disconnectTimer);
                         room.host.disconnectTimer = null;
                     }
+                    if (userName) room.host.userName = userName;
                     room.host.ws = ws;
                     room.host.connected = true;
                     ws.roomCode = roomCode;
                     ws.isHost = true;
                     ws.userId = userId;
+                    ws.userName = room.host.userName;
 
-                    console.log(`🔄 [Online] Chủ phòng [${roomCode}] kết nối lại thành công! [UID: ${userId}]`);
+                    console.log(`🔄 [Online] Chủ phòng [${roomCode}] (${room.host.userName}) kết nối lại thành công! [UID: ${userId}]`);
 
                     ws.send(JSON.stringify({
                         type: 'ROOM_RECONNECTED',
                         roomCode,
                         isHost: true,
                         myColor: room.host.color,
+                        myUserName: room.host.userName,
+                        opponentUserName: room.guest ? room.guest.userName : 'Đối thủ',
                         opponentColor: room.guestColor,
                         opponentJoined: !!(room.guest && room.guest.connected),
                         fen: room.fen,
@@ -517,7 +525,8 @@ wss.on('connection', (ws) => {
                     if (room.guest && room.guest.ws && room.guest.ws.readyState === 1) {
                         room.guest.ws.send(JSON.stringify({
                             type: 'PLAYER_RECONNECTED',
-                            message: 'Chủ phòng đã kết nối lại! Tiếp tục trận đấu.'
+                            opponentUserName: room.host.userName,
+                            message: `${room.host.userName} đã kết nối lại! Tiếp tục trận đấu.`
                         }));
                     }
                     return;
@@ -529,19 +538,23 @@ wss.on('connection', (ws) => {
                         clearTimeout(room.guest.disconnectTimer);
                         room.guest.disconnectTimer = null;
                     }
+                    if (userName) room.guest.userName = userName;
                     room.guest.ws = ws;
                     room.guest.connected = true;
                     ws.roomCode = roomCode;
                     ws.isHost = false;
                     ws.userId = userId;
+                    ws.userName = room.guest.userName;
 
-                    console.log(`🔄 [Online] Khách [${roomCode}] kết nối lại thành công! [UID: ${userId}]`);
+                    console.log(`🔄 [Online] Khách [${roomCode}] (${room.guest.userName}) kết nối lại thành công! [UID: ${userId}]`);
 
                     ws.send(JSON.stringify({
                         type: 'ROOM_RECONNECTED',
                         roomCode,
                         isHost: false,
                         myColor: room.guest.color,
+                        myUserName: room.guest.userName,
+                        opponentUserName: room.host ? room.host.userName : 'Chủ phòng',
                         opponentColor: room.host ? room.host.color : 'red',
                         opponentJoined: !!(room.host && room.host.connected),
                         fen: room.fen,
@@ -551,7 +564,8 @@ wss.on('connection', (ws) => {
                     if (room.host && room.host.ws && room.host.ws.readyState === 1) {
                         room.host.ws.send(JSON.stringify({
                             type: 'PLAYER_RECONNECTED',
-                            message: 'Đối thủ đã kết nối lại! Tiếp tục trận đấu.'
+                            opponentUserName: room.guest.userName,
+                            message: `${room.guest.userName} đã kết nối lại! Tiếp tục trận đấu.`
                         }));
                     }
                     return;
@@ -562,18 +576,21 @@ wss.on('connection', (ws) => {
             if (room.isPermanent) {
                 // Nếu chưa có chủ phòng hoặc chủ phòng cũ đã ngắt kết nối hết hạn
                 if (!room.host || !room.host.connected) {
-                    room.host = { ws, userId, color: room.hostColor || 'red', connected: true, disconnectTimer: null };
+                    const hostName = userName || 'Chủ phòng';
+                    room.host = { ws, userId, userName: hostName, color: room.hostColor || 'red', connected: true, disconnectTimer: null };
                     ws.roomCode = roomCode;
                     ws.isHost = true;
                     ws.userId = userId;
+                    ws.userName = hostName;
 
-                    console.log(`👑 [Fixed Room 013579] Người chơi nhận quyền Chủ phòng (UID: ${userId})`);
+                    console.log(`👑 [Fixed Room 013579] ${hostName} nhận quyền Chủ phòng (UID: ${userId})`);
 
                     ws.send(JSON.stringify({
                         type: 'ROOM_CREATED',
                         roomCode,
                         isPermanent: true,
                         myColor: room.host.color,
+                        myUserName: hostName,
                         guestColor: room.guestColor || 'black',
                         fen: room.fen,
                         currentTurn: room.currentTurn
@@ -582,7 +599,8 @@ wss.on('connection', (ws) => {
                     if (room.guest && room.guest.connected && room.guest.ws && room.guest.ws.readyState === 1) {
                         ws.send(JSON.stringify({
                             type: 'PLAYER_JOINED',
-                            message: 'Đối thủ đã có sẵn trong phòng.',
+                            opponentUserName: room.guest.userName,
+                            message: `${room.guest.userName} đã có sẵn trong phòng.`,
                             guestColor: room.guest.color
                         }));
                     }
@@ -592,19 +610,23 @@ wss.on('connection', (ws) => {
                 // Nếu đã có chủ phòng nhưng chưa có khách (hoặc khách cũ đã thoát)
                 if (!room.guest || !room.guest.connected) {
                     const guestColor = room.host.color === 'red' ? 'black' : 'red';
-                    room.guest = { ws, userId, color: guestColor, connected: true, disconnectTimer: null };
+                    const guestName = userName || 'Khách';
+                    room.guest = { ws, userId, userName: guestName, color: guestColor, connected: true, disconnectTimer: null };
                     ws.roomCode = roomCode;
                     ws.isHost = false;
                     ws.userId = userId;
+                    ws.userName = guestName;
 
-                    console.log(`👥 [Fixed Room 013579] Khách tham gia phòng (UID: ${userId})`);
+                    console.log(`👥 [Fixed Room 013579] ${guestName} tham gia phòng (UID: ${userId})`);
 
                     ws.send(JSON.stringify({
                         type: 'ROOM_JOINED',
                         roomCode,
                         isPermanent: true,
                         myColor: guestColor,
+                        myUserName: guestName,
                         hostColor: room.host.color,
+                        opponentUserName: room.host.userName,
                         fen: room.fen,
                         currentTurn: room.currentTurn
                     }));
@@ -612,7 +634,8 @@ wss.on('connection', (ws) => {
                     if (room.host && room.host.ws && room.host.ws.readyState === 1) {
                         room.host.ws.send(JSON.stringify({
                             type: 'PLAYER_JOINED',
-                            message: 'Đối thủ đã tham gia phòng! Sẵn sàng thi đấu.',
+                            opponentUserName: guestName,
+                            message: `${guestName} đã tham gia phòng! Sẵn sàng thi đấu.`,
                             guestColor: guestColor
                         }));
                     }
@@ -634,18 +657,22 @@ wss.on('connection', (ws) => {
                 }));
             }
 
-            room.guest = { ws, userId, color: room.guestColor, connected: true, disconnectTimer: null };
+            const guestName = userName || 'Khách';
+            room.guest = { ws, userId, userName: guestName, color: room.guestColor, connected: true, disconnectTimer: null };
             ws.roomCode = roomCode;
             ws.isHost = false;
             ws.userId = userId;
+            ws.userName = guestName;
 
-            console.log(`👥 [Online] Khách đã tham gia phòng: [${roomCode}] (${room.guestColor})`);
+            console.log(`👥 [Online] ${guestName} đã tham gia phòng: [${roomCode}] (${room.guestColor})`);
 
             ws.send(JSON.stringify({
                 type: 'ROOM_JOINED',
                 roomCode,
                 myColor: room.guestColor,
+                myUserName: guestName,
                 hostColor: room.host ? room.host.color : 'red',
+                opponentUserName: room.host ? room.host.userName : 'Chủ phòng',
                 fen: room.fen,
                 currentTurn: room.currentTurn
             }));
@@ -653,7 +680,8 @@ wss.on('connection', (ws) => {
             if (room.host && room.host.ws && room.host.ws.readyState === 1) {
                 room.host.ws.send(JSON.stringify({
                     type: 'PLAYER_JOINED',
-                    message: 'Đối thủ đã tham gia phòng! Sẵn sàng thi đấu.',
+                    opponentUserName: guestName,
+                    message: `${guestName} đã tham gia phòng! Sẵn sàng thi đấu.`,
                     guestColor: room.guestColor
                 }));
             }
@@ -785,7 +813,7 @@ wss.on('connection', (ws) => {
             const text = String(data.text || '').trim();
             if (!text) return;
             const senderRole = ws.isHost ? 'host' : 'guest';
-            const senderName = ws.isHost ? 'Chủ phòng' : 'Khách';
+            const senderName = data.senderName || ws.userName || (ws.isHost ? 'Chủ phòng' : 'Khách');
             const time = new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
 
             const payload = JSON.stringify({
@@ -798,6 +826,25 @@ wss.on('connection', (ws) => {
 
             if (room.host && room.host.ws && room.host.ws.readyState === 1) room.host.ws.send(payload);
             if (room.guest && room.guest.ws && room.guest.ws.readyState === 1) room.guest.ws.send(payload);
+            return;
+        }
+
+        // 8.1. ĐỔI TÊN HIỂN THỊ (USERNAME) TRONG TRẬN
+        if (type === 'SET_USERNAME') {
+            const newName = String(data.userName || '').trim().slice(0, 25);
+            if (!newName) return;
+            ws.userName = newName;
+            if (ws.isHost && room.host) room.host.userName = newName;
+            else if (!ws.isHost && room.guest) room.guest.userName = newName;
+
+            const opponent = ws.isHost ? room.guest : room.host;
+            if (opponent && opponent.ws && opponent.ws.readyState === 1) {
+                opponent.ws.send(JSON.stringify({
+                    type: 'OPPONENT_RENAMED',
+                    role: ws.isHost ? 'host' : 'guest',
+                    newName: newName
+                }));
+            }
             return;
         }
 
