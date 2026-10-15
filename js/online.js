@@ -808,6 +808,7 @@ function applyRoomMembers(data) {
 function onJoinedRoom() {
     getRtcConfig().catch(() => { }); // tải trước ICE servers để kết nối voice nhanh hơn
     startVoiceMonitors();
+    watchChatVisibility();
     // Báo lại trạng thái mic/cam hiện tại cho máy chủ (khôi phục sau khi rớt mạng, không hiện thông báo)
     sendVoiceStatus(onlineState.isMicActive, true);
     if (onlineState.isCameraActive) sendCameraStatus(true, true);
@@ -1775,10 +1776,32 @@ export function toggleChatBox(forceOpen, options = {}) {
     }
 }
 
+// Người dùng có đang THỰC SỰ nhìn thấy khung tin nhắn không
+// (trên điện thoại: đang ở tab Chat nhưng vuốt lên để đánh cờ thì khung chat nằm ngoài màn hình → coi như không thấy)
 function isChatPaneVisible() {
+    if (document.hidden) return false;
     const chatBox = document.getElementById('online-chat-box');
     if (!chatBox || chatBox.classList.contains('chat-collapsed')) return false;
-    return chatBox.getClientRects().length > 0;
+    const list = document.getElementById('online-chat-messages') || chatBox;
+    if (list.getClientRects().length === 0) return false;
+    const r = list.getBoundingClientRect();
+    const visibleHeight = Math.min(r.bottom, window.innerHeight) - Math.max(r.top, 0);
+    return visibleHeight >= Math.min(80, r.height * 0.5);
+}
+
+// Vuốt tới khung chat (tin nhắn hiện lên màn hình) → xoá số tin chưa đọc
+let chatSeenObserver = null;
+function watchChatVisibility() {
+    if (chatSeenObserver || typeof IntersectionObserver === 'undefined') return;
+    const list = document.getElementById('online-chat-messages');
+    if (!list) return;
+    chatSeenObserver = new IntersectionObserver(() => {
+        if (onlineState.unreadChatCount > 0 && isChatPaneVisible()) {
+            resetChatUnread();
+            hideChatPeek();
+        }
+    }, { threshold: [0, 0.25, 0.5, 0.75, 1] });
+    chatSeenObserver.observe(list);
 }
 
 function resetChatUnread() {
