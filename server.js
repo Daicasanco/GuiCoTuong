@@ -581,11 +581,11 @@ function getMemberByWs(room, ws) {
     return null;
 }
 
-function getMemberSocketByUserId(room, userId) {
+function getMemberByUserId(room, userId) {
     if (!room || !userId) return null;
-    if (room.host && room.host.userId === userId) return room.host.ws;
-    if (room.guest && room.guest.userId === userId) return room.guest.ws;
-    if (room.spectators && room.spectators.has(userId)) return room.spectators.get(userId).ws;
+    if (room.host && room.host.userId === userId) return room.host;
+    if (room.guest && room.guest.userId === userId) return room.guest;
+    if (room.spectators && room.spectators.has(userId)) return room.spectators.get(userId);
     return null;
 }
 
@@ -606,8 +606,29 @@ function publicMember(m) {
         color: m.color,
         connected: m.connected !== false,
         micOn: !!m.micOn,
-        camOn: !!m.camOn
+        camOn: !!m.camOn,
+        vp: m.vp || 1
     };
+}
+
+// ========================================================
+// PHIÊN BẢN GIAO THỨC VOICE
+// Máy còn chạy code cũ (do cache) dùng cách kết nối voice khác → không nghe được máy bản mới.
+// Client mới gửi clientVersion khi vào phòng; máy cũ (không gửi) được nhắc tải lại trang,
+// và tín hiệu voice không được chuyển giữa 2 phiên bản khác nhau.
+// ========================================================
+const VOICE_PROTOCOL = 2;
+const OUTDATED_CLIENT_MESSAGE = 'Ứng dụng trên máy bạn đang là BẢN CŨ nên không nghe/nói voice được với người khác. Hãy tải lại trang (hoặc tắt hẳn app rồi mở lại).';
+
+function getClientVoiceProtocol(data) {
+    const v = Number(data && data.clientVersion);
+    return Number.isFinite(v) && v > 0 ? Math.floor(v) : 1;
+}
+
+function warnIfOutdated(ws) {
+    if ((ws.clientVp || 1) < VOICE_PROTOCOL) {
+        sendJson(ws, { type: 'ERROR', code: 'CLIENT_OUTDATED', message: OUTDATED_CLIENT_MESSAGE });
+    }
 }
 
 // Khi cùng 1 người (cùng UID) vào lại từ tab/thiết bị khác, báo cho phiên cũ biết để không còn "phiên ma"
@@ -802,6 +823,8 @@ function checkRoomTimeout(code, room, now) {
 wss.on('connection', (ws) => {
     ws.isAlive = true;
     ws.on('pong', () => { ws.isAlive = true; });
+    // Client mới tự kiểm tra: nếu giao thức của máy chủ mới hơn → hiện nút tải lại trang
+    sendJson(ws, { type: 'SERVER_INFO', voiceProtocol: VOICE_PROTOCOL });
 
     ws.on('message', (messageRaw) => {
         // Bọc try/catch: 1 tin nhắn lỗi định dạng không được phép làm sập toàn bộ server (mất hết các phòng)
@@ -868,11 +891,8 @@ function handleSocketMessage(ws, messageRaw) {
         };
 
         rooms.set(roomCode, room);
-        ws.roomCode = roomCode;
-        ws.isHost = true;
-        ws.isSpectator = false;
-        ws.userId = userId;
-        ws.userName = hostName;
+        ws.clientVp = getClientVoiceProtocol(data);
+        bindSocket(ws, roomCode, room.host, 'host');
 
         console.log(`🏠 [Online] Phòng mới được tạo: [${roomCode}] bởi ${hostName} (${hostColor}) [UID: ${userId}]`);
 
@@ -888,12 +908,15 @@ function handleSocketMessage(ws, messageRaw) {
             spectatorCount: 0
         });
         broadcastPlayersUpdated(room);
+        warnIfOutdated(ws);
         return;
     }
 
     // 2. VÀO PHÒNG (BẰNG MÃ HOẶC PHÒNG CỐ ĐỊNH 013579 HOẶC KẾT NỐI LẠI)
     if (type === 'JOIN_ROOM') {
+        ws.clientVp = getClientVoiceProtocol(data);
         handleJoinRoom(ws, data, userId, userName);
+        if (ws.roomCode) warnIfOutdated(ws);
         return;
     }
 
@@ -1410,8 +1433,11 @@ function handleSocketMessage(ws, messageRaw) {
         // Nếu có chỉ định targetUserId -> gửi trực tiếp tới đích (Full Mesh P2P signaling)
         if (data.targetUserId) {
             const targetUserId = String(data.targetUserId);
+            const target = getMemberByUserId(room, targetUserId);
+            // 2 máy khác phiên bản giao thức voice không kết nối được với nhau → không chuyển tín hiệu
+            if (!target || (target.vp || 1) !== (member.vp || 1)) return;
             relay.targetUserId = targetUserId;
-            sendJson(getMemberSocketByUserId(room, targetUserId), relay);
+            sendJson(target.ws, relay);
             return;
         }
 
@@ -1436,6 +1462,7 @@ function bindSocket(ws, roomCode, member, role) {
     ws.isSpectator = role === 'spectator';
     ws.userId = member.userId;
     ws.userName = member.userName;
+    member.vp = ws.clientVp || 1;
 }
 
 function addSpectator(ws, room, roomCode, userId, userName) {

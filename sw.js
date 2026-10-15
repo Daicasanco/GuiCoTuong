@@ -1,5 +1,5 @@
 // sw.js
-const CACHE_NAME = '0.9.12T';
+const CACHE_NAME = '0.9.13T';
 
 const urlsToCache = [
     './',
@@ -214,28 +214,73 @@ self.addEventListener('activate', (event) => {
     );
 });
 
-self.addEventListener('fetch', (event) => {
-    if (event.request.url.includes('/api/')) return;
-    if (event.request.url.startsWith('chrome-extension://')) return;
+function putInCache(request, response) {
+    if (!response || response.status !== 200 || response.type !== 'basic') return;
+    const copy = response.clone();
+    caches.open(CACHE_NAME).then((cache) => cache.put(request, copy)).catch(() => {});
+}
 
-    event.respondWith(
-        caches.match(event.request).then((cachedResponse) => {
-            if (cachedResponse) {
-                return cachedResponse;
-            }
-            return fetch(event.request).then((networkResponse) => {
-                if (!networkResponse || networkResponse.status !== 200 || networkResponse.type !== 'basic') {
-                    return networkResponse;
+// Code của app (HTML/JS/CSS): lấy bản MỚI NHẤT từ mạng trước, chỉ dùng cache khi mất mạng / mạng quá chậm.
+// Trước đây dùng cache trước → nhiều máy chạy mãi code cũ sau khi cập nhật (voice giữa máy cũ và máy mới không kết nối được).
+const NETWORK_TIMEOUT_MS = 4000;
+
+function isAppCode(request, url) {
+    if (url.origin !== self.location.origin) return false;
+    if (request.mode === 'navigate') return true;
+    if (url.pathname.startsWith('/engines') || url.pathname.startsWith('/sql/')) return false;
+    return /\.(?:html|js|mjs|css)$/.test(url.pathname);
+}
+
+function networkFirst(request) {
+    return new Promise((resolve, reject) => {
+        let settled = false;
+        const fallbackToCache = () => caches.match(request, { ignoreSearch: request.mode === 'navigate' });
+
+        const timer = setTimeout(() => {
+            fallbackToCache().then((cached) => {
+                if (cached && !settled) {
+                    settled = true;
+                    resolve(cached);
                 }
-                const responseToCache = networkResponse.clone();
-                caches.open(CACHE_NAME).then((cache) => {
-                    cache.put(event.request, responseToCache);
-                });
-                return networkResponse;
-            }).catch((err) => {
-                console.log('[Service Worker] Lỗi mạng:', event.request.url, err);
-                throw err;
             });
-        })
-    );
+        }, NETWORK_TIMEOUT_MS);
+
+        fetch(request).then((response) => {
+            clearTimeout(timer);
+            putInCache(request, response);
+            if (!settled) {
+                settled = true;
+                resolve(response);
+            }
+        }).catch((err) => {
+            clearTimeout(timer);
+            fallbackToCache().then((cached) => {
+                if (settled) return;
+                settled = true;
+                if (cached) resolve(cached);
+                else reject(err);
+            });
+        });
+    });
+}
+
+// File nặng ít thay đổi (engine, ảnh, âm thanh, dữ liệu bài tập): ưu tiên cache cho nhanh
+function cacheFirst(request) {
+    return caches.match(request).then((cached) => {
+        if (cached) return cached;
+        return fetch(request).then((response) => {
+            putInCache(request, response);
+            return response;
+        });
+    });
+}
+
+self.addEventListener('fetch', (event) => {
+    const request = event.request;
+    if (request.method !== 'GET') return;
+    if (request.url.includes('/api/')) return;
+    if (request.url.startsWith('chrome-extension://')) return;
+
+    const url = new URL(request.url);
+    event.respondWith(isAppCode(request, url) ? networkFirst(request) : cacheFirst(request));
 });

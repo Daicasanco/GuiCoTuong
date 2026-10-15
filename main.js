@@ -53,9 +53,34 @@ window.onload = async () => {
 
 // Đăng ký Service Worker
 if ('serviceWorker' in navigator) {
+    // Có phiên bản mới (service worker mới vừa kích hoạt) → tải lại 1 lần để chạy code mới.
+    // Không tải lại giữa ván online; sẽ tải lại ngay khi rời phòng.
+    // Lần cài đầu tiên (trang chưa có service worker) cũng phát controllerchange → bỏ qua đúng lần đó
+    let ignoreFirstControllerChange = !navigator.serviceWorker.controller;
+    let reloadingForUpdate = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (ignoreFirstControllerChange) {
+            ignoreFirstControllerChange = false;
+            return;
+        }
+        if (reloadingForUpdate) return;
+        if (document.body.classList.contains('online-in-room')) {
+            window.__pendingAppUpdate = true;
+            return;
+        }
+        reloadingForUpdate = true;
+        window.location.reload();
+    });
+
     window.addEventListener('load', () => {
         navigator.serviceWorker.register('./sw.js', { scope: './' })
-        .then(() => { console.log("✅ PWA Ready"); })
+        .then((registration) => {
+            console.log("✅ PWA Ready");
+            // Mở lại app (điện thoại) → kiểm tra bản cập nhật
+            document.addEventListener('visibilitychange', () => {
+                if (!document.hidden) registration.update().catch(() => {});
+            });
+        })
         .catch(err => console.log("❌ PWA Error:", err));
     });
 }

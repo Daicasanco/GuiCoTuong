@@ -15,6 +15,10 @@ function notify(text) {
     showToast(escapeHtml(text));
 }
 
+// Phiên bản giao thức voice (phải khớp VOICE_PROTOCOL trong server.js).
+// Máy chạy code cũ (do cache) không kết nối voice được với máy bản mới → được nhắc tải lại trang.
+const CLIENT_VOICE_PROTOCOL = 2;
+
 function isTouchDevice() {
     try { return window.matchMedia('(pointer: coarse)').matches; } catch (e) { return false; }
 }
@@ -662,7 +666,8 @@ export function connectOnlineSocket() {
                     type: 'JOIN_ROOM',
                     roomCode: savedRoom,
                     userId: getOrCreateUserId(),
-                    userName: getOnlineUserName()
+                    userName: getOnlineUserName(),
+                    clientVersion: CLIENT_VOICE_PROTOCOL
                 });
             }
 
@@ -791,7 +796,8 @@ function applyRoomMembers(data) {
             role,
             connected: m.connected !== false,
             micOn: !!m.micOn,
-            camOn: !!m.camOn
+            camOn: !!m.camOn,
+            vp: Number(m.vp) || 1
         });
     };
     pushMember(data.host, 'host');
@@ -820,6 +826,12 @@ function handleOnlineMessage(data) {
     const { type } = data;
 
     // 0. PHẢN HỒI PING
+    // Máy chủ đã nâng cấp giao thức voice mà máy này còn bản cũ → nhắc tải lại trang
+    if (type === 'SERVER_INFO') {
+        if (Number(data.voiceProtocol) > CLIENT_VOICE_PROTOCOL) showAppUpdateBanner();
+        return;
+    }
+
     if (type === 'PONG') {
         if (pongTimer) {
             clearTimeout(pongTimer);
@@ -1346,7 +1358,8 @@ export async function createOnlineRoom(hostColor = 'red') {
             userId: getOrCreateUserId(),
             userName: getOnlineUserName(),
             hostColor: hostColor,
-            initialFen: initialFen
+            initialFen: initialFen,
+            clientVersion: CLIENT_VOICE_PROTOCOL
         });
     } catch (e) {
         showToast('❌ Lỗi tạo phòng: ' + escapeHtml(e.message));
@@ -1371,7 +1384,8 @@ export async function joinOnlineRoom(roomCode) {
             type: 'JOIN_ROOM',
             userId: getOrCreateUserId(),
             userName: getOnlineUserName(),
-            roomCode: code
+            roomCode: code,
+            clientVersion: CLIENT_VOICE_PROTOCOL
         });
     } catch (e) {
         showToast('❌ Lỗi kết nối phòng: ' + escapeHtml(e.message));
@@ -1591,6 +1605,12 @@ export function leaveOnlineRoom(options = {}) {
     if (topStrip) topStrip.style.display = 'none';
     if (botStrip) botStrip.style.display = 'none';
     if (chatBox) chatBox.style.display = 'none';
+
+    // Có bản cập nhật chờ áp dụng trong lúc đang chơi → tải lại ngay bây giờ
+    if (window.__pendingAppUpdate) {
+        window.location.reload();
+        return;
+    }
 
     // Chuyển lại về chế độ Phân Tích mặc định (engine sẽ được khởi động lại ở đó)
     import('./events.js').then(m => {
@@ -2006,9 +2026,14 @@ function tuneOpusSdp(sdp) {
 }
 
 // Danh sách người được kết nối voice (giữ thứ tự của máy chủ: chủ phòng, khách, khán giả theo thứ tự vào)
+function isMemberOutdated(m) {
+    return (m.vp || 1) !== CLIENT_VOICE_PROTOCOL;
+}
+
 function getVoiceTargets() {
     const myId = getOrCreateUserId();
-    const eligible = onlineState.roomMembers.filter(m => m.userId).slice(0, VOICE_MESH_LIMIT);
+    // Máy chạy phiên bản cũ không kết nối voice được → bỏ qua (hiện chip "bản cũ" thay vì kết nối mãi không được)
+    const eligible = onlineState.roomMembers.filter(m => m.userId && (m.userId === myId || !isMemberOutdated(m))).slice(0, VOICE_MESH_LIMIT);
     const inMesh = eligible.some(m => m.userId === myId);
     return { inMesh, targets: eligible.filter(m => m.userId !== myId) };
 }
@@ -2917,8 +2942,20 @@ const VOICE_STATUS_TEXT = {
     reconnecting: 'Đang kết nối lại voice...',
     failed: 'Không kết nối được voice (mạng chặn) — đang thử lại',
     away: 'Tạm mất mạng',
-    off: 'Ngoài giới hạn voice của phòng'
+    off: 'Ngoài giới hạn voice của phòng',
+    outdated: 'Máy này đang dùng phiên bản cũ của ứng dụng — cần tải lại trang để nghe/nói voice'
 };
+
+// Thanh nhắc cập nhật (khi máy chủ đã lên phiên bản mới hơn máy này)
+function showAppUpdateBanner() {
+    if (document.getElementById('online-update-banner')) return;
+    const el = document.createElement('div');
+    el.id = 'online-update-banner';
+    el.className = 'online-update-banner';
+    el.innerHTML = '<span>🔄 Đã có phiên bản mới. Tải lại để voice hoạt động với mọi người.</span><button type="button">Tải lại</button>';
+    el.querySelector('button').onclick = () => window.location.reload();
+    document.body.appendChild(el);
+}
 
 let lastVoicePanelHtml = '';
 
@@ -2954,7 +2991,8 @@ function renderVoicePanel() {
     others.forEach(m => {
         const peer = onlineState.peerConnections.get(m.userId);
         let status;
-        if (!inMesh || !targetIds.has(m.userId)) status = 'off';
+        if (isMemberOutdated(m)) status = 'outdated';
+        else if (!inMesh || !targetIds.has(m.userId)) status = 'off';
         else if (!m.connected) status = 'away';
         else if (!peer) status = 'connecting';
         else status = peer.status || 'connecting';
@@ -2963,7 +3001,7 @@ function renderVoicePanel() {
 
     const html = chips.map(c =>
         `<span class="voice-chip is-${c.status}${c.uid === myId ? ' voice-me' : ''}${c.speaking ? ' speaking' : ''}" data-uid="${escapeHtml(c.uid)}" title="${escapeHtml(VOICE_STATUS_TEXT[c.status] || '')}">` +
-        `<span class="voice-indicator"></span>${c.mic ? '🎙️' : '🔇'} ${escapeHtml(c.name)}</span>`
+        `<span class="voice-indicator"></span>${c.mic ? '🎙️' : '🔇'} ${escapeHtml(c.name)}${c.status === 'outdated' ? ' <span class="voice-outdated-tag">⚠️ bản cũ</span>' : ''}</span>`
     ).join('');
 
     if (html !== lastVoicePanelHtml) {
