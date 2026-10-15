@@ -110,7 +110,8 @@ export function reloadBoardImage(boardPath) {
         const img = new Image();
         img.src = `${boardPath}/board.webp`;
         img.onload = () => { 
-            imageCache['board'] = img; 
+            imageCache['board'] = img;
+            requestBoardRedraw();
             const boardArea = document.getElementById('chess-board-area');
             if (boardArea) {
                 boardArea.style.backgroundImage = `url('${img.src}')`;
@@ -133,7 +134,10 @@ export function reloadPieceImages(piecePath) {
 
         const checkDone = () => {
             loadedCount++;
-            if (loadedCount === totalImages) resolve();
+            if (loadedCount === totalImages) {
+                requestBoardRedraw();
+                resolve();
+            }
         };
 
         extraPieces.forEach(key => {
@@ -455,30 +459,38 @@ function handleShiftClickDeleteLine(event) {
     }
 }
 
+let lastCanvasDpr = 0;
+
 function resizeCanvas() {
     if (!canvas) return;
     const parent = document.getElementById('chess-board-area');
-    
+
     // ĐÃ SỬA: Dùng offsetWidth thay vì getBoundingClientRect()
     // Để lấy kích thước gốc chưa bị ảnh hưởng bởi CSS transform: scale()
     const trueWidth = parent.offsetWidth;
     const trueHeight = parent.offsetHeight;
-    
+
     boardRect = { width: trueWidth, height: trueHeight };
+    // Chỉnh kích thước quân cờ (bạn có thể đổi lại 0.1 nếu thấy 0.088 hơi nhỏ)
+    pieceSize = trueWidth * 0.1;
 
     const dpr = window.devicePixelRatio || 1;
-    
-    canvas.width = trueWidth * dpr;
-    canvas.height = trueHeight * dpr;
-    
+    const pixelWidth = Math.floor(trueWidth * dpr);
+    const pixelHeight = Math.floor(trueHeight * dpr);
+
+    // Sự kiện resize bắn rất nhiều lần (bàn phím điện thoại, toast, chat...) → chỉ cấp phát lại canvas khi kích thước thật sự đổi
+    if (canvas.width === pixelWidth && canvas.height === pixelHeight && lastCanvasDpr === dpr) return;
+    lastCanvasDpr = dpr;
+
+    canvas.width = pixelWidth;
+    canvas.height = pixelHeight;
+
     // ĐÃ SỬA: Canvas luôn tự động fill đầy thẻ cha 100%
     canvas.style.width = `100%`;
     canvas.style.height = `100%`;
-    
-    ctx.scale(dpr, dpr);
-    
-    // Chỉnh kích thước quân cờ (bạn có thể đổi lại 0.1 nếu thấy 0.088 hơi nhỏ)
-    pieceSize = trueWidth * 0.1; 
+
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    requestBoardRedraw();
 }
 
 // Raycasting: Tính toán tọa độ Click bằng TỶ LỆ PHẦN TRĂM (%)
@@ -539,14 +551,89 @@ function drawMoveBadge() {
     }
 }
 
-// VÒNG LẶP RENDER CHÍNH
-function renderLoop() {
-    if (state.isStudioMode) {
-        requestAnimationFrame(renderLoop);
-        return;
-    }
+// ==========================================
+// CHỈ VẼ LẠI KHI CÓ THAY ĐỔI (TIẾT KIỆM PIN / CHỐNG NÓNG MÁY TRÊN ĐIỆN THOẠI)
+// Trước đây bàn cờ được vẽ lại toàn bộ 60-120 lần/giây kể cả khi đứng yên.
+// Giờ mỗi khung hình chỉ so "chữ ký" trạng thái (rất rẻ); có thay đổi hoặc đang có hiệu ứng mới vẽ.
+// Ngoài ra vẫn vẽ lại định kỳ mỗi 1 giây để không bao giờ bị kẹt hình nếu có thay đổi nào chưa được theo dõi.
+// ==========================================
+let boardDirty = true;
+let lastFrameSignature = '';
+let lastFrameRefs = [];
+let lastFullDrawAt = 0;
+let wasAnimating = false;
+let variationModalEl = null;
+const IDLE_REDRAW_MS = 1000;
 
-    if (!ctx || !boardRect.width) { requestAnimationFrame(renderLoop); return; }
+export function requestBoardRedraw() {
+    boardDirty = true;
+}
+
+if (typeof document !== 'undefined' && document.fonts && document.fonts.ready) {
+    document.fonts.ready.then(() => requestBoardRedraw()).catch(() => {});
+}
+
+function computeFrameSignature() {
+    const s = state;
+    const sit = s.currentSituation;
+    let hash = 0;
+    if (sit) {
+        for (let i = 0; i < 204; i++) hash = (hash * 31 + (sit[i] | 0)) | 0;
+    }
+    let pvSig = '';
+    if (s.isAnalyzing && s.pvLines) {
+        for (const line of s.pvLines) {
+            if (line) pvSig += (line.bestMove || '') + ':' + (line.ponderMove || '') + ':' + (line.rank || '') + ',';
+        }
+    }
+    const node = s.currentNode;
+    const hovered = s.hoveredPVLine && s.hoveredPVLine.pv ? s.hoveredPVLine.pv.slice(0, 4).join('') : '';
+    const legal = s.legalMoves;
+    if (!variationModalEl) variationModalEl = document.getElementById('variation-modal');
+    const editingParent = s.editingParentNode;
+    return hash + '|' + s.lastMove + '|' + s.isEditMode + '|' + s.selectedBoardPiece + '|' +
+        (s.selectedSquare ? s.selectedSquare.iccs : '') + '|' +
+        (legal ? legal.length + (legal[0] || '') + (legal[legal.length - 1] || '') : '') + '|' +
+        s.appMode + '|' + s.isPeeking + '|' + (s.memorizeSettings ? s.memorizeSettings.isBlind : '') + '|' +
+        s.isBoardFlipped + '|' + s.isAnimating + '|' +
+        (node ? (node.classification || '') + (node.children ? node.children.length : 0) + (node.parent ? node.parent.aiBestMove || '' : '') : '') + '|' +
+        s.isChartAnalyzed + '|' + hovered + '|' + s.isAnalyzing + '|' + pvSig + '|' +
+        (s.appSettings ? String(s.appSettings.arrows) + s.appSettings.boardTheme : '') + '|' +
+        (editingParent && editingParent.children ? editingParent.children.length : '') + '|' +
+        (variationModalEl ? variationModalEl.style.display : '') + '|' +
+        userDrawLines.length + '|' + isDraggingLine + '|' +
+        (currentDragClient ? currentDragClient.x + ',' + currentDragClient.y : '') + '|' +
+        canvas.width + 'x' + canvas.height;
+}
+
+function frameRefsChanged() {
+    const refs = [state.currentSituation, state.currentNode, state.pvLines, state.hoveredPVLine, state.legalMoves, state.editingParentNode, userDrawLines];
+    let changed = refs.length !== lastFrameRefs.length;
+    for (let i = 0; !changed && i < refs.length; i++) {
+        if (refs[i] !== lastFrameRefs[i]) changed = true;
+    }
+    lastFrameRefs = refs;
+    return changed;
+}
+
+// VÒNG LẶP RENDER CHÍNH
+function renderLoop(now) {
+    requestAnimationFrame(renderLoop);
+    if (state.isStudioMode) return;
+    if (!ctx || !boardRect.width) return;
+
+    const animating = !!(animState && state.isAnimating);
+    const signature = computeFrameSignature();
+    const refsChanged = frameRefsChanged();
+    const frameTime = typeof now === 'number' ? now : performance.now();
+    const needsDraw = animating || wasAnimating || boardDirty || refsChanged ||
+        signature !== lastFrameSignature || (frameTime - lastFullDrawAt) >= IDLE_REDRAW_MS;
+    wasAnimating = animating;
+    if (!needsDraw) return;
+
+    boardDirty = false;
+    lastFrameSignature = signature;
+    lastFullDrawAt = frameTime;
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -559,8 +646,6 @@ function renderLoop() {
     drawMoveBadge();             // <--- VẼ BADGE ĐÁNH GIÁ NƯỚC ĐI TỪ BIỂU ĐỒ PHÂN TÍCH
     drawBestMoveArrowCanvas();   // Vẽ mũi tên AI
     drawUserDrawnLines();        // <--- VẼ CÁC ĐƯỜNG KẺ CHIẾN THUẬT DO NGƯỜI DÙNG KÉO THẢ
-
-    requestAnimationFrame(renderLoop);
 }
 
 // =========================================================

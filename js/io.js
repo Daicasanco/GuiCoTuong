@@ -160,7 +160,8 @@ let saveTimeout = null;
 let isSaving = false;
 
 export async function saveGameState() {
-    if (isSaving || state.isEditMode || state.gameList.length === 0 || state.appMode === 'memorize' || state.appMode === 'puzzle') return;
+    // Ván online do máy chủ quản lý → không lưu đè lên kho ván của chế độ Phân Tích
+    if (isSaving || state.isEditMode || state.gameList.length === 0 || state.appMode === 'memorize' || state.appMode === 'puzzle' || state.appMode === 'online') return;
     isSaving = true;
     
     try {

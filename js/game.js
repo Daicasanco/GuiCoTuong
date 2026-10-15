@@ -9,7 +9,7 @@ import { initPikafish, triggerEngineEvaluation, botProfiles } from './engine.js'
 import { handleEditSquareClick } from './editor.js';
 import { formatGameInfoString, mergeGameInfo, saveGameState } from './io.js';
 import { checkDraw60Moves, getStrictLegalMoves } from './rules.js';
-import { isOnlineMode, isMyOnlineTurn, getMyOnlineColor, sendOnlineMove, updateOnlineRoomBar, onlineState } from './online.js';
+import { isOnlineMode, isMyOnlineTurn, getMyOnlineColor, sendOnlineMove, updateOnlineRoomBar, onlineState, isOnlineSocketReady } from './online.js';
 
 import { playAudio } from './audio.js';
 
@@ -296,6 +296,22 @@ export function applyAutoBoardFlip() {
     }
 }
 
+// Khởi động / đánh giá engine sau khi nạp ván. Chế độ online không dùng engine (tiết kiệm RAM điện thoại);
+// state.deferEngineInit = true khi mở web từ link mời phòng (?room=) để chưa tải engine vội.
+function autoStartEngine() {
+    if (state.isEditMode || state.appMode === 'online') return;
+    if (!state.engineModule) {
+        if (!state.deferEngineInit) initPikafish();
+    } else {
+        triggerEngineEvaluation();
+    }
+}
+
+export function ensureEngineForCurrentMode() {
+    state.deferEngineInit = false;
+    if (!state.engineModule && !state.isEditMode && state.appMode !== 'online') initPikafish();
+}
+
 export async function initGame(fenString = START_FEN, loadFromStorage = false) {
      if (!state.isEditMode) {
         state.isPeeking = false; 
@@ -370,9 +386,7 @@ export async function initGame(fenString = START_FEN, loadFromStorage = false) {
                     updateVsBotToolButtons();
                 }
 
-                if (!state.isEditMode) {
-                    if (!state.engineModule) initPikafish(); else triggerEngineEvaluation();
-                }
+                autoStartEngine();
                 updateBlindTurnUI();
                 return; // Thoát hàm nếu load DB thành công
             }
@@ -421,11 +435,9 @@ export async function initGame(fenString = START_FEN, loadFromStorage = false) {
         updateVsBotToolButtons();
     }
 
-    saveGameState(); 
+    saveGameState();
 
-    if (!state.isEditMode) {
-        if (!state.engineModule) initPikafish(); else triggerEngineEvaluation();
-    }
+    autoStartEngine();
     updateBlindTurnUI(); 
     if (state.appMode === 'memorize') triggerMemorizeBot();
 }
@@ -443,6 +455,10 @@ export function handleSquareClick(x, y, iccsPos) {
         }
         if (onlineState.isSpectator) {
             showToast("👁️ Bạn đang ở chế độ xem cờ!");
+            return;
+        }
+        if (!isOnlineSocketReady()) {
+            showToast("📡 Đang mất kết nối máy chủ, chờ kết nối lại rồi đi tiếp...");
             return;
         }
         if (!isMyOnlineTurn()) {

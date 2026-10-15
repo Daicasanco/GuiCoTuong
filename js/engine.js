@@ -25,6 +25,37 @@ export let engineOutputListeners = [];
 let currentEngineInstance = null; // Lưu trữ Worker (nếu là single) hoặc Module (nếu là multi)
 let currentWasmType = null;
 let fallbackTriggered = false;
+let engineGeneration = 0; // tăng mỗi lần shutdownEngine() → huỷ các lần khởi động đang dở dang
+
+// Theo dõi các worker pthread ("em-pthread") do bản engine ĐA LUỒNG tạo ra (số lượng = số nhân CPU + 1).
+// Bản build không export _emscripten_force_exit nên module.terminate() luôn lỗi → phải tự tắt các worker này
+// thì bộ nhớ WASM dùng chung mới được giải phóng.
+const enginePthreadWorkers = new Set();
+if (typeof window !== 'undefined' && typeof window.Worker === 'function' && !window.Worker.__tracksPthreads) {
+    const NativeWorker = window.Worker;
+    class TrackedWorker extends NativeWorker {
+        constructor(url, options) {
+            super(url, options);
+            if (options && options.name === 'em-pthread') enginePthreadWorkers.add(this);
+        }
+    }
+    TrackedWorker.__tracksPthreads = true;
+    window.Worker = TrackedWorker;
+}
+
+function destroyEngineInstance(instance) {
+    if (instance) {
+        try {
+            if (typeof instance.terminate === 'function') instance.terminate();
+        } catch (e) {
+            // Bản đa luồng: terminate() gọi hàm không được export → bỏ qua, tắt worker trực tiếp bên dưới
+        }
+    }
+    enginePthreadWorkers.forEach((w) => {
+        try { w.terminate(); } catch (e) {}
+    });
+    enginePthreadWorkers.clear();
+}
 
 
 export function getDeviceTier() {
@@ -206,7 +237,10 @@ function applyEngineHardwareLimits(type) {
 }
 
 export async function initPikafish(forceType = null) {
+    const generation = engineGeneration;
     const type = forceType || await getBestEngineType();
+    // Engine đã bị tắt (vào chế độ online) trong lúc đang chọn bản build → không khởi động nữa
+    if (generation !== engineGeneration) return;
     currentWasmType = type;
 
     applyEngineHardwareLimits(type);
@@ -229,6 +263,11 @@ export async function initPikafish(forceType = null) {
                 print: function(text) { handleEngineOutput(text); },
                 ALLOW_MEMORY_GROWTH: true
             }).then(function(module) {
+                // Engine đa luồng tải xong muộn sau khi đã vào chế độ online → tắt ngay để không chiếm RAM
+                if (generation !== engineGeneration) {
+                    destroyEngineInstance(module);
+                    return;
+                }
                 currentEngineInstance = module;
                 state.engineModule = {
                     sendCommand: (cmd) => {
@@ -303,6 +342,7 @@ export async function initPikafish(forceType = null) {
             };
 
             engineWorker.onmessage = (e) => {
+                if (currentEngineInstance !== engineWorker) return; // worker cũ đã bị tắt
                 if (e.data.debug) {
                 } else if (e.data.error) {
                     onEngineError(e.data.error);
@@ -1042,11 +1082,7 @@ function fallbackToSingleThread(reason) {
     console.warn("🔥 Trình duyệt sập bộ nhớ do đa luồng. Kích hoạt Cứu Hộ (Fallback) về Đơn luồng!", reason);
     showToast("⚠️ Trình duyệt cạn RAM! Đang tự động chuyển về chế độ An toàn...");
 
-    try {
-        if (currentEngineInstance && typeof currentEngineInstance.terminate === 'function') {
-            currentEngineInstance.terminate();
-        }
-    } catch (err) { console.warn("Lỗi khi kill engine", err); }
+    destroyEngineInstance(currentEngineInstance);
 
     currentEngineInstance = null;
     state.engineModule = null;
@@ -1070,6 +1106,18 @@ export function forceStopEngine() {
     pendingAction = null; 
     state.engineModule.sendCommand("stop");
     isEngineSearching = false;
+}
+
+// Tắt hẳn engine để giải phóng RAM (bộ nhớ WASM + toàn bộ worker đa luồng).
+// Dùng khi chơi online: không cần engine; quay lại chế độ phân tích thì initGame sẽ tự khởi động lại.
+export function shutdownEngine() {
+    engineGeneration++;
+    const instance = currentEngineInstance;
+    pendingAction = null;
+    isEngineSearching = false;
+    currentEngineInstance = null;
+    state.engineModule = null;
+    destroyEngineInstance(instance);
 }
 
 export function sendEngineCommand(cmd) {

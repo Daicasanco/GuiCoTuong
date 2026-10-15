@@ -53,6 +53,14 @@ Tức là dự án đã hoạt động!
 Bước 5: Trải nghiệm ứng dụng
 Mở trình duyệt web (Chrome, Edge, Cốc Cốc, Safari...) và truy cập vào địa chỉ:
 👉 http://localhost:3000
+🎙️ Voice / Camera khi chơi online (BẮT BUỘC cấu hình TURN)
+Voice dùng WebRTC kết nối trực tiếp giữa các người chơi. Người chơi ở các mạng khác nhau (4G Viettel/Vina/Mobi, wifi công ty, trường học...) thường KHÔNG kết nối thẳng được với nhau, cần máy chủ trung chuyển TURN.
+- Sao chép `.env.example` thành `.env` rồi điền 1 trong 3 lựa chọn: Cloudflare TURN, Metered.ca, hoặc tự dựng coturn.
+- Trên Render/hosting: khai báo các biến đó trong mục Environment Variables.
+- Khởi động server, dòng log `🔁 TURN cho voice/camera: ĐÃ CẤU HÌNH` là thành công.
+- Micro/Camera chỉ chạy trên HTTPS (hoặc localhost). Mở bằng `http://192.168.x.x` trên điện thoại sẽ không bật được mic.
+- Mỗi người test phải dùng trình duyệt/thiết bị riêng (các tab cùng trình duyệt dùng chung 1 tài khoản).
+
 📂 Cấu trúc thư mục chính
 index.html: Giao diện chính của ứng dụng.
 server.js: Mã nguồn máy chủ Node.js (Xử lý cấu hình Header và API).

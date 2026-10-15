@@ -5,6 +5,20 @@ import { initGame, executeMove } from './game.js';
 import { START_FEN } from './config.js';
 import { clearUserDrawLines, renderBoardFull } from './board.js';
 
+// Escape HTML cho mọi dữ liệu do người chơi khác gửi (tên, chat) trước khi chèn bằng innerHTML
+function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+}
+
+// Toast an toàn cho nội dung có chứa tên/tin nhắn của người khác
+function notify(text) {
+    showToast(escapeHtml(text));
+}
+
+function isTouchDevice() {
+    try { return window.matchMedia('(pointer: coarse)').matches; } catch (e) { return false; }
+}
+
 // Lấy tên hiển thị từ thiết bị hoặc tự sinh mặc định
 export function getOnlineUserName() {
     let name = localStorage.getItem('tuongky_username');
@@ -27,13 +41,14 @@ export function setOnlineUserName(newName) {
     if (inputName) inputName.value = clean;
 
     updateOnlineRoomBar();
+    scheduleVoiceUIUpdate();
 
-    if (onlineState.ws && onlineState.roomCode) {
-        onlineState.ws.send(JSON.stringify({
+    if (onlineState.roomCode) {
+        wsSend({
             type: 'SET_USERNAME',
             roomCode: onlineState.roomCode,
             userName: clean
-        }));
+        });
     }
     return true;
 }
@@ -61,18 +76,17 @@ export const onlineState = {
     opponentJoined: false,
     opponentConnected: false,
     ws: null,
-    // Voice & Video WebRTC (Full Mesh Conference — hỗ trợ N người đàm thoại đồng thời)
+    // Voice & Video WebRTC (Full Mesh "luôn kết nối" như Google Meet — tối đa VOICE_MESH_LIMIT người)
     isMicActive: false,
     isCameraActive: false,
+    isSpeakerMuted: false,
     localStream: null,
     localVideoStream: null,
-    // Map<userId, RTCPeerConnection> — mỗi thành viên 1 kết nối riêng
+    // Map<userId, Peer> — mỗi thành viên 1 kết nối riêng (Peer.pc là RTCPeerConnection)
     peerConnections: new Map(),
-    // Map<userId, HTMLAudioElement> — element audio riêng cho từng remote peer
-    remoteAudios: new Map(),
     // Set<userId> — danh sách những người đang bật Mic trong phòng
     micUsers: new Set(),
-    // Danh sách userId trong phòng (server gửi khi có thay đổi)
+    // Danh sách thành viên trong phòng: { userId, userName, role, connected, micOn, camOn }
     roomMembers: [],
     // Đồng hồ tính giờ
     timerState: {
@@ -112,6 +126,23 @@ export function isMyOnlineTurn() {
 
 export function getMyOnlineColor() {
     return onlineState.myColor;
+}
+
+// Socket đang mở và sẵn sàng gửi tin (dùng để chặn đi quân khi đang mất mạng → tránh lệch bàn cờ)
+export function isOnlineSocketReady() {
+    return !!onlineState.ws && onlineState.ws.readyState === WebSocket.OPEN;
+}
+
+// Gửi tin an toàn: không ném lỗi khi socket đang đóng
+function wsSend(obj) {
+    const ws = onlineState.ws;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return false;
+    try {
+        ws.send(JSON.stringify(obj));
+        return true;
+    } catch (e) {
+        return false;
+    }
 }
 
 // ============================================================
@@ -278,88 +309,135 @@ function getWebSocketUrl() {
     return `${protocol}//${loc.host}`;
 }
 
+// ============================================================
+// KẾT NỐI WEBSOCKET (TỰ PHỤC HỒI KHI RỚT MẠNG / MỞ LẠI APP TRÊN ĐIỆN THOẠI)
+// ============================================================
 let reconnectTimer = null;
 let reconnectAttempts = 0;
-const MAX_RECONNECT_ATTEMPTS = 30; // Thử kết nối lại trong vòng ~90s
+let connectPromise = null;
+let pongTimer = null;
+let lastJoinAttemptCode = null; // mã phòng của yêu cầu JOIN_ROOM gần nhất (để hiểu đúng lỗi ROOM_NOT_FOUND)
+const MAX_RECONNECT_ATTEMPTS = 45; // ~2 phút (máy chủ chỉ giữ chỗ 90s)
 
 // Khởi tạo kết nối WebSocket với khả năng tự phục hồi
 export function connectOnlineSocket() {
-    return new Promise((resolve, reject) => {
-        if (onlineState.ws && onlineState.ws.readyState === WebSocket.OPEN) {
-            return resolve(onlineState.ws);
-        }
+    const current = onlineState.ws;
+    if (current && current.readyState === WebSocket.OPEN) {
+        return Promise.resolve(current);
+    }
+    if (connectPromise) return connectPromise;
 
+    connectPromise = new Promise((resolve, reject) => {
+        let settled = false;
+        let ws;
         try {
-            const wsUrl = getWebSocketUrl();
-            const ws = new WebSocket(wsUrl);
-
-            ws.onopen = () => {
-                onlineState.connected = true;
-                onlineState.ws = ws;
-                reconnectAttempts = 0;
-                if (reconnectTimer) {
-                    clearTimeout(reconnectTimer);
-                    reconnectTimer = null;
-                }
-
-                // Nếu đang có phòng cờ dở dang (rớt mạng hoặc F5), tự động gửi yêu cầu tái kết nối
-                const savedRoom = sessionStorage.getItem('tuongky_active_room') || onlineState.roomCode;
-                if (savedRoom) {
-                    console.log(`🔄 [Online] Đang tự động kết nối lại vào phòng [${savedRoom}]...`);
-                    ws.send(JSON.stringify({
-                        type: 'JOIN_ROOM',
-                        roomCode: savedRoom,
-                        userId: getOrCreateUserId(),
-                        userName: getOnlineUserName()
-                    }));
-                }
-
-                resolve(ws);
-            };
-
-            ws.onmessage = (event) => {
-                try {
-                    const data = JSON.parse(event.data);
-                    handleOnlineMessage(data);
-                } catch (e) {
-                    console.error('[Online] Lỗi xử lý tin nhắn socket:', e);
-                }
-            };
-
-            ws.onerror = (err) => {
-                console.error('[Online] Lỗi kết nối WebSocket:', err);
-                reject(err);
-            };
-
-            ws.onclose = () => {
-                onlineState.connected = false;
-                const activeRoom = sessionStorage.getItem('tuongky_active_room') || onlineState.roomCode;
-
-                if (activeRoom) {
-                    showToast('⚠️ Mất kết nối mạng tạm thời! Đang thử kết nối lại...');
-                    updateOnlineRoomBar();
-                    scheduleSocketReconnect();
-                }
-            };
+            ws = new WebSocket(getWebSocketUrl());
         } catch (e) {
+            connectPromise = null;
             reject(e);
+            return;
         }
+
+        // Mạng di động chập chờn có thể treo ở trạng thái CONNECTING rất lâu → tự huỷ sau 10s
+        const openTimeout = setTimeout(() => {
+            if (!settled) {
+                try { ws.close(); } catch (e) {}
+            }
+        }, 10000);
+
+        ws.onopen = () => {
+            clearTimeout(openTimeout);
+            settled = true;
+            connectPromise = null;
+
+            const previous = onlineState.ws;
+            onlineState.ws = ws;
+            onlineState.connected = true;
+            if (previous && previous !== ws) {
+                previous.onclose = null;
+                previous.onmessage = null;
+                try { previous.close(); } catch (e) {}
+            }
+
+            reconnectAttempts = 0;
+            if (reconnectTimer) {
+                clearTimeout(reconnectTimer);
+                reconnectTimer = null;
+            }
+
+            // Nếu đang có phòng cờ dở dang (rớt mạng), tự động gửi yêu cầu tái kết nối
+            const savedRoom = onlineState.roomCode || sessionStorage.getItem('tuongky_active_room');
+            if (savedRoom) {
+                console.log(`🔄 [Online] Đang tự động kết nối lại vào phòng [${savedRoom}]...`);
+                lastJoinAttemptCode = savedRoom;
+                wsSend({
+                    type: 'JOIN_ROOM',
+                    roomCode: savedRoom,
+                    userId: getOrCreateUserId(),
+                    userName: getOnlineUserName()
+                });
+            }
+
+            updateOnlineRoomBar();
+            resolve(ws);
+        };
+
+        ws.onmessage = (event) => {
+            if (onlineState.ws !== ws) return;
+            let data;
+            try {
+                data = JSON.parse(event.data);
+            } catch (e) {
+                return;
+            }
+            try {
+                handleOnlineMessage(data);
+            } catch (e) {
+                console.error('[Online] Lỗi xử lý tin nhắn socket:', e);
+            }
+        };
+
+        ws.onerror = () => {
+            // onclose luôn được gọi sau onerror → xử lý tập trung ở onclose
+        };
+
+        ws.onclose = () => {
+            clearTimeout(openTimeout);
+            if (!settled) {
+                settled = true;
+                connectPromise = null;
+                reject(new Error('Không kết nối được máy chủ'));
+            }
+            if (onlineState.ws !== ws) return; // socket cũ đã được thay thế
+            onlineState.connected = false;
+            if (pongTimer) {
+                clearTimeout(pongTimer);
+                pongTimer = null;
+            }
+
+            if (onlineState.roomCode) {
+                showToast('⚠️ Mất kết nối máy chủ, đang kết nối lại... (voice vẫn giữ nếu mạng còn)');
+                updateOnlineRoomBar();
+                scheduleSocketReconnect();
+            }
+        };
     });
+
+    return connectPromise;
 }
 
 // Lên lịch tự động kết nối lại khi mạng bị đứt
-function scheduleSocketReconnect() {
-    if (reconnectTimer) return;
-    const activeRoom = sessionStorage.getItem('tuongky_active_room') || onlineState.roomCode;
-    if (!activeRoom) return;
+function scheduleSocketReconnect(delayOverride) {
+    if (reconnectTimer || connectPromise) return;
+    if (!onlineState.roomCode) return;
 
     if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
-        showToast('❌ Không thể kết nối lại máy chủ sau 90 giây.');
-        sessionStorage.removeItem('tuongky_active_room');
-        leaveOnlineRoom();
+        showToast('❌ Không thể kết nối lại máy chủ. Vui lòng vào lại phòng.');
+        leaveOnlineRoom({ notifyServer: false, silent: true });
         return;
     }
 
+    const delay = delayOverride !== undefined ? delayOverride : (reconnectAttempts === 0 ? 500 : Math.min(3000, 1000 * reconnectAttempts));
     reconnectAttempts++;
     reconnectTimer = setTimeout(() => {
         reconnectTimer = null;
@@ -367,15 +445,104 @@ function scheduleSocketReconnect() {
         connectOnlineSocket().catch(() => {
             scheduleSocketReconnect();
         });
-    }, 3000);
+    }, delay);
+}
+
+// Điện thoại vừa mở lại app / đổi mạng: socket có thể đã "chết" mà trình duyệt chưa biết → kiểm tra ngay
+function ensureSocketAlive() {
+    if (!onlineState.roomCode) return;
+    const ws = onlineState.ws;
+    if (!ws || ws.readyState === WebSocket.CLOSED || ws.readyState === WebSocket.CLOSING) {
+        if (reconnectTimer) {
+            clearTimeout(reconnectTimer);
+            reconnectTimer = null;
+        }
+        scheduleSocketReconnect(0);
+        return;
+    }
+    if (ws.readyState !== WebSocket.OPEN || pongTimer) return;
+    if (!wsSend({ type: 'PING' })) return;
+    pongTimer = setTimeout(() => {
+        pongTimer = null;
+        if (onlineState.ws !== ws) return;
+        // Không nhận được PONG → kết nối nửa sống nửa chết, bỏ và kết nối lại ngay
+        console.warn('[Online] Socket không phản hồi, kết nối lại...');
+        ws.onclose = null;
+        ws.onmessage = null;
+        try { ws.close(); } catch (e) {}
+        onlineState.connected = false;
+        updateOnlineRoomBar();
+        scheduleSocketReconnect(0);
+    }, 5000);
+}
+
+if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) ensureSocketAlive();
+    });
+    window.addEventListener('online', () => {
+        ensureSocketAlive();
+        recoverStalledPeers();
+    });
+    if (navigator.connection && typeof navigator.connection.addEventListener === 'function') {
+        navigator.connection.addEventListener('change', () => {
+            ensureSocketAlive();
+            recoverStalledPeers();
+        });
+    }
+}
+
+// Cập nhật danh sách thành viên từ ROOM_PLAYERS_UPDATED
+function applyRoomMembers(data) {
+    const members = [];
+    const pushMember = (m, role) => {
+        if (!m || !m.userId) return;
+        members.push({
+            userId: m.userId,
+            userName: m.userName,
+            role,
+            connected: m.connected !== false,
+            micOn: !!m.micOn,
+            camOn: !!m.camOn
+        });
+    };
+    pushMember(data.host, 'host');
+    pushMember(data.guest, 'guest');
+    (data.spectators || []).forEach(s => pushMember(s, 'spectator'));
+    onlineState.roomMembers = members;
+
+    const myId = getOrCreateUserId();
+    onlineState.micUsers = new Set(members.filter(m => m.micOn && m.connected && m.userId !== myId).map(m => m.userId));
+    if (onlineState.isMicActive) onlineState.micUsers.add(myId);
+}
+
+// Đồng bộ trạng thái sau khi vào/vào lại phòng
+function onJoinedRoom() {
+    getRtcConfig().catch(() => {}); // tải trước ICE servers để kết nối voice nhanh hơn
+    startVoiceMonitors();
+    // Báo lại trạng thái mic/cam hiện tại cho máy chủ (khôi phục sau khi rớt mạng, không hiện thông báo)
+    sendVoiceStatus(onlineState.isMicActive, true);
+    if (onlineState.isCameraActive) sendCameraStatus(true, true);
+    scheduleVoiceUIUpdate();
 }
 
 // Xử lý các thông điệp từ Server
 function handleOnlineMessage(data) {
     const { type } = data;
 
+    // 0. PHẢN HỒI PING
+    if (type === 'PONG') {
+        if (pongTimer) {
+            clearTimeout(pongTimer);
+            pongTimer = null;
+        }
+        return;
+    }
+
     // 1. TẠO PHÒNG THÀNH CÔNG
     if (type === 'ROOM_CREATED') {
+        const rejoin = onlineState.roomCode === data.roomCode;
+        if (onlineState.roomCode && !rejoin) teardownVoice();
         onlineState.roomCode = data.roomCode;
         onlineState.isHost = true;
         onlineState.isSpectator = false;
@@ -390,17 +557,20 @@ function handleOnlineMessage(data) {
         onlineState.spectatorCount = data.spectatorCount || 0;
         sessionStorage.setItem('tuongky_active_room', data.roomCode);
 
-        enterOnlineGame(data.fen, data.myColor);
+        enterOnlineGame(data.fen, data.myColor, rejoin);
         closeModal('online-room-modal');
-        showToast(`🏠 Đã tạo phòng [${data.roomCode}]! Hãy gửi mã cho bạn bè.`);
+        showToast(`🏠 Đã tạo phòng [${escapeHtml(data.roomCode)}]! Hãy gửi mã cho bạn bè.`);
         updateOnlineRoomBar();
         updatePlayerStripsUI();
         startClockTicker();
+        onJoinedRoom();
         return;
     }
 
     // 2. VÀO PHÒNG THÀNH CÔNG (GUEST)
     if (type === 'ROOM_JOINED') {
+        const rejoin = onlineState.roomCode === data.roomCode;
+        if (onlineState.roomCode && !rejoin) teardownVoice();
         onlineState.roomCode = data.roomCode;
         onlineState.isHost = false;
         onlineState.isSpectator = false;
@@ -415,17 +585,20 @@ function handleOnlineMessage(data) {
         onlineState.spectatorCount = data.spectatorCount || 0;
         sessionStorage.setItem('tuongky_active_room', data.roomCode);
 
-        enterOnlineGame(data.fen, data.myColor);
+        enterOnlineGame(data.fen, data.myColor, rejoin);
         closeModal('online-room-modal');
-        showToast(`🎉 Đã vào phòng [${data.roomCode}]! Bạn cầm quân [${data.myColor === 'red' ? 'Đỏ' : 'Đen'}].`);
+        showToast(`🎉 Đã vào phòng [${escapeHtml(data.roomCode)}]! Bạn cầm quân [${data.myColor === 'red' ? 'Đỏ' : 'Đen'}].`);
         updateOnlineRoomBar();
         updatePlayerStripsUI();
         startClockTicker();
+        onJoinedRoom();
         return;
     }
 
     // 2.1. VÀO PHÒNG VỚI TƯ CÁCH KHÁN GIẢ (SPECTATOR)
     if (type === 'ROOM_JOINED_SPECTATOR') {
+        const rejoin = onlineState.roomCode === data.roomCode;
+        if (onlineState.roomCode && !rejoin) teardownVoice();
         onlineState.roomCode = data.roomCode;
         onlineState.isHost = false;
         onlineState.isSpectator = true;
@@ -436,17 +609,23 @@ function handleOnlineMessage(data) {
         onlineState.players = { host: data.host, guest: data.guest };
         sessionStorage.setItem('tuongky_active_room', data.roomCode);
 
-        enterOnlineGame(data.fen, 'red'); // Khán giả nhìn bàn cờ mặc định (Đỏ ở dưới)
+        if (onlineState.isCameraActive) stopOnlineCamera();
+        enterOnlineGame(data.fen, 'red', rejoin); // Khán giả nhìn bàn cờ mặc định (Đỏ ở dưới)
         closeModal('online-room-modal');
-        showToast(`👁️ Bạn đã vào phòng [${data.roomCode}] ở chế độ XEM CỜ!`);
+        showToast(rejoin
+            ? `🔄 Đã kết nối lại phòng [${escapeHtml(data.roomCode)}].`
+            : `👁️ Bạn đã vào phòng [${escapeHtml(data.roomCode)}] ở chế độ XEM CỜ!`);
         updateOnlineRoomBar();
         updatePlayerStripsUI();
         startClockTicker();
+        onJoinedRoom();
         return;
     }
 
-    // 3. TÁI KẾT NỐI VÀO PHÒNG THÀNH CÔNG (RECONNECTED SAU KHI RỚT MẠNG / F5)
+    // 3. TÁI KẾT NỐI VÀO PHÒNG THÀNH CÔNG (RECONNECTED SAU KHI RỚT MẠNG)
     if (type === 'ROOM_RECONNECTED') {
+        const rejoin = onlineState.roomCode === data.roomCode;
+        if (onlineState.roomCode && !rejoin) teardownVoice();
         onlineState.roomCode = data.roomCode;
         onlineState.isHost = !!data.isHost;
         onlineState.isSpectator = !!data.isSpectator;
@@ -461,12 +640,13 @@ function handleOnlineMessage(data) {
         onlineState.spectatorCount = data.spectatorCount || 0;
         sessionStorage.setItem('tuongky_active_room', data.roomCode);
 
-        enterOnlineGame(data.fen, data.myColor || 'red');
+        enterOnlineGame(data.fen, data.myColor || 'red', rejoin);
         closeModal('online-room-modal');
-        showToast(`🔄 Đã kết nối lại phòng [${data.roomCode}]! Ván cờ tiếp tục.`);
+        showToast(`🔄 Đã kết nối lại phòng [${escapeHtml(data.roomCode)}]! Ván cờ tiếp tục.`);
         updateOnlineRoomBar();
         updatePlayerStripsUI();
         startClockTicker();
+        onJoinedRoom();
         return;
     }
 
@@ -476,43 +656,8 @@ function handleOnlineMessage(data) {
         onlineState.spectatorsList = data.spectators || [];
         onlineState.spectatorCount = data.spectatorCount || 0;
 
-        // === VOICE MESH: Rebuild roomMembers từ ROOM_PLAYERS_UPDATED ===
-        const members = [];
-        if (data.host && data.host.connected !== false) {
-            members.push({ userId: data.host.userId, userName: data.host.userName, role: 'host' });
-        }
-        if (data.guest && data.guest.connected !== false) {
-            members.push({ userId: data.guest.userId, userName: data.guest.userName, role: 'guest' });
-        }
-        if (data.spectators) {
-            data.spectators.forEach(s => {
-                if (s.connected !== false) {
-                    members.push({ userId: s.userId, userName: s.userName, role: 'spectator' });
-                }
-            });
-        }
-        onlineState.roomMembers = members;
-
-        // Dọn dẹp PeerConnection và micUsers cho người đã rời
-        for (const [uid] of onlineState.peerConnections) {
-            if (!onlineState.roomMembers.find(m => m.userId === uid)) {
-                removePeerForUser(uid);
-                onlineState.micUsers.delete(uid);
-            }
-        }
-
-        // Nếu mic hoặc camera đang bật → chỉ tạo PeerConnection tới thành viên mới nếu mình là Offerer (myId > m.userId)
-        if (onlineState.isMicActive || onlineState.isCameraActive) {
-            const myId = getOrCreateUserId();
-            for (const m of onlineState.roomMembers) {
-                if (m.userId === myId) continue;
-                if (!onlineState.peerConnections.has(m.userId) && myId > m.userId) {
-                    createPeerForUser(m.userId);
-                    sendOfferTo(m.userId);
-                }
-            }
-        }
-        updateVoiceParticipantsUI();
+        applyRoomMembers(data);
+        reconcileVoiceMesh();
 
         const specCountEl = document.getElementById('online-spectator-count');
         if (specCountEl) specCountEl.textContent = onlineState.spectatorCount;
@@ -539,7 +684,7 @@ function handleOnlineMessage(data) {
             renderBoardFull(state.currentSituation);
         }
 
-        showToast('⚔️ ' + (data.message || 'Bạn đã được chọn vào thi đấu!'));
+        notify('⚔️ ' + (data.message || 'Bạn đã được chọn vào thi đấu!'));
         updateOnlineRoomBar();
         updatePlayerStripsUI();
         return;
@@ -549,9 +694,9 @@ function handleOnlineMessage(data) {
     if (type === 'DEMOTED_TO_SPECTATOR') {
         onlineState.isSpectator = true;
         onlineState.isHost = false;
-        stopOnlineCamera(); // Tắt cam vì khán giả không được bật cam
+        stopOnlineCamera(); // Tắt cam vì khán giả không được bật cam (voice vẫn giữ nguyên)
 
-        showToast('👁️ ' + (data.message || 'Bạn đã chuyển sang chế độ Khán giả xem cờ.'));
+        notify('👁️ ' + (data.message || 'Bạn đã chuyển sang chế độ Khán giả xem cờ.'));
         updateOnlineRoomBar();
         updatePlayerStripsUI();
         return;
@@ -563,7 +708,7 @@ function handleOnlineMessage(data) {
             onlineState.timerState = data.timer;
         }
         if (data.message) {
-            showToast('⏱️ ' + data.message);
+            notify('⏱️ ' + data.message);
         }
         updateClocksTick();
         startClockTicker();
@@ -578,7 +723,7 @@ function handleOnlineMessage(data) {
         onlineState.timerState.isRunning = false;
         updateClocksTick();
         stopClockTicker();
-        showToast(data.message || '⏰ Hết giờ!');
+        notify(data.message || '⏰ Hết giờ!');
         return;
     }
 
@@ -587,7 +732,7 @@ function handleOnlineMessage(data) {
         onlineState.opponentJoined = true;
         onlineState.opponentConnected = true;
         if (data.opponentUserName) onlineState.opponentUserName = data.opponentUserName;
-        showToast('👥 ' + (data.message || `${onlineState.opponentUserName} đã tham gia phòng!`));
+        notify('👥 ' + (data.message || `${onlineState.opponentUserName} đã tham gia phòng!`));
         updateOnlineRoomBar();
         updatePlayerStripsUI();
         return;
@@ -596,7 +741,7 @@ function handleOnlineMessage(data) {
     // 5. ĐỐI THỦ TẠM THỜI MẤT MẠNG (ĐANG CHỜ 90S)
     if (type === 'PLAYER_DISCONNECTED') {
         onlineState.opponentConnected = false;
-        showToast('⏳ ' + (data.message || `${onlineState.opponentUserName} tạm mất mạng, đang chờ 90s...`));
+        notify('⏳ ' + (data.message || `${onlineState.opponentUserName} tạm mất mạng, đang chờ 90s...`));
         updateOnlineRoomBar();
         updatePlayerStripsUI();
         return;
@@ -607,7 +752,7 @@ function handleOnlineMessage(data) {
         onlineState.opponentConnected = true;
         onlineState.opponentJoined = true;
         if (data.opponentUserName) onlineState.opponentUserName = data.opponentUserName;
-        showToast('🟢 ' + (data.message || `${onlineState.opponentUserName} đã kết nối lại phòng!`));
+        notify('🟢 ' + (data.message || `${onlineState.opponentUserName} đã kết nối lại phòng!`));
         updateOnlineRoomBar();
         updatePlayerStripsUI();
         return;
@@ -616,10 +761,12 @@ function handleOnlineMessage(data) {
     // 7. ĐỐI THỦ ĐỔI TÊN HIỂN THỊ
     if (type === 'OPPONENT_RENAMED') {
         if (data.newName) {
-            onlineState.opponentUserName = data.newName;
-            showToast(`👤 Đối thủ đã đổi tên thành: ${data.newName}`);
+            const isOpponent = !onlineState.isSpectator && (data.role === 'host' || data.role === 'guest');
+            if (isOpponent) onlineState.opponentUserName = data.newName;
+            notify(`👤 Một người trong phòng đã đổi tên thành: ${data.newName}`);
             updateOnlineRoomBar();
             updatePlayerStripsUI();
+            scheduleVoiceUIUpdate();
         }
         return;
     }
@@ -628,7 +775,7 @@ function handleOnlineMessage(data) {
     if (type === 'PROMOTED_TO_HOST') {
         onlineState.isHost = true;
         onlineState.isSpectator = false;
-        showToast('👑 ' + (data.message || 'Bạn đã trở thành Chủ phòng mới!'));
+        notify('👑 ' + (data.message || 'Bạn đã trở thành Chủ phòng mới!'));
         updateOnlineRoomBar();
         updatePlayerStripsUI();
         return;
@@ -649,10 +796,26 @@ function handleOnlineMessage(data) {
         return;
     }
 
+    // 9.1. MÁY CHỦ TỪ CHỐI NƯỚC ĐI (LỆCH LƯỢT) → ĐỒNG BỘ LẠI THẾ CỜ CHUẨN
+    if (type === 'MOVE_REJECTED') {
+        onlineState.currentTurn = data.currentTurn;
+        if (data.timer) onlineState.timerState = data.timer;
+        notify('⚠️ ' + (data.message || 'Nước đi bị từ chối, bàn cờ đã được đồng bộ lại.'));
+        if (data.fen) {
+            initGame(data.fen, false).then(() => {
+                state.isBoardFlipped = (onlineState.myColor === 'black');
+                if (state.currentSituation) renderBoardFull(state.currentSituation);
+                updateOnlineRoomBar();
+                updatePlayerStripsUI();
+            });
+        }
+        return;
+    }
+
     // 10. CHỦ PHÒNG CẬP NHẬT BÀN CỜ (XẾP QUÂN)
     if (type === 'BOARD_UPDATED') {
         onlineState.currentTurn = data.currentTurn;
-        showToast('🛠️ ' + (data.message || 'Chủ phòng đã cập nhật thế cờ mới!'));
+        notify('🛠️ ' + (data.message || 'Chủ phòng đã cập nhật thế cờ mới!'));
         if (data.fen) {
             initGame(data.fen, false);
         }
@@ -664,7 +827,7 @@ function handleOnlineMessage(data) {
     // 11. THAY ĐỔI LƯỢT ĐI
     if (type === 'TURN_CHANGED') {
         onlineState.currentTurn = data.currentTurn;
-        showToast('🎯 ' + (data.message || 'Lượt đi đã thay đổi!'));
+        notify('🎯 ' + (data.message || 'Lượt đi đã thay đổi!'));
         if (data.fen && state.currentNode) {
             state.currentNode.fen = data.fen;
             if (typeof vschess !== 'undefined') {
@@ -684,7 +847,7 @@ function handleOnlineMessage(data) {
     if (type === 'SIDES_SWAPPED') {
         onlineState.myColor = data.myColor;
         onlineState.opponentColor = data.opponentColor;
-        showToast('🔄 ' + (data.message || 'Đã hoán đổi bên!'));
+        notify('🔄 ' + (data.message || 'Đã hoán đổi bên!'));
         state.isBoardFlipped = (onlineState.myColor === 'black');
         if (state.currentSituation) {
             renderBoardFull(state.currentSituation);
@@ -700,7 +863,7 @@ function handleOnlineMessage(data) {
         if (data.timer) {
             onlineState.timerState = data.timer;
         }
-        showToast('🆕 ' + (data.message || 'Ván cờ mới bắt đầu!'));
+        notify('🆕 ' + (data.message || 'Ván cờ mới bắt đầu!'));
         initGame(data.fen || START_FEN, false).then(() => {
             state.isBoardFlipped = (onlineState.myColor === 'black');
             if (state.currentSituation) {
@@ -713,32 +876,36 @@ function handleOnlineMessage(data) {
         return;
     }
 
-    // 14. CHỦ PHÒNG RỜI ĐI HẲN
+    // 14. CHỦ PHÒNG RỜI ĐI HẲN (PHÒNG ĐÓNG)
     if (type === 'HOST_LEFT') {
-        showToast('🚪 ' + (data.message || 'Chủ phòng đã rời phòng!'));
+        notify('🚪 ' + (data.message || 'Chủ phòng đã rời phòng!'));
         sessionStorage.removeItem('tuongky_active_room');
+        teardownVoice();
         onlineState.roomCode = null;
         onlineState.opponentJoined = false;
         onlineState.opponentConnected = false;
         document.body.classList.remove('mode-online');
-        stopVoiceChat();
-        stopOnlineCamera();
         stopClockTicker();
         updateOnlineRoomBar();
         updatePlayerStripsUI();
         return;
     }
 
-    // 15. KHÁCH RỜI ĐI HẲN
+    // 15. KHÁCH RỜI ĐI HẲN (voice với các khán giả vẫn giữ nguyên)
     if (type === 'GUEST_LEFT') {
-        showToast('🚪 ' + (data.message || 'Đối thủ đã rời đi.'));
+        notify('🚪 ' + (data.message || 'Đối thủ đã rời đi.'));
         onlineState.opponentJoined = false;
         onlineState.opponentConnected = false;
         onlineState.opponentUserName = 'Đang chờ...';
-        stopVoiceChat();
-        stopOnlineCamera();
         updateOnlineRoomBar();
         updatePlayerStripsUI();
+        return;
+    }
+
+    // 15.1. CÙNG TÀI KHOẢN VỪA VÀO PHÒNG TỪ TAB/THIẾT BỊ KHÁC
+    if (type === 'SESSION_REPLACED') {
+        leaveOnlineRoom({ notifyServer: false, silent: true });
+        notify('📱 ' + (data.message || 'Bạn đã vào phòng từ nơi khác.'));
         return;
     }
 
@@ -754,17 +921,9 @@ function handleOnlineMessage(data) {
         return;
     }
 
-    // 18. WEBRTC SIGNALING RELAY (VOICE & VIDEO)
-    if (type === 'WEBRTC_OFFER') {
-        handleWebRTCOffer(data);
-        return;
-    }
-    if (type === 'WEBRTC_ANSWER') {
-        handleWebRTCAnswer(data);
-        return;
-    }
-    if (type === 'WEBRTC_ICE') {
-        handleWebRTCIce(data);
+    // 18. WEBRTC SIGNALING RELAY (VOICE & VIDEO) — xử lý tuần tự theo từng người
+    if (type === 'WEBRTC_OFFER' || type === 'WEBRTC_ANSWER' || type === 'WEBRTC_ICE' || type === 'WEBRTC_REQUEST') {
+        handleRtcSignal(data);
         return;
     }
     if (type === 'VOICE_STATUS') {
@@ -774,14 +933,34 @@ function handleOnlineMessage(data) {
 
     // 19. BÁO LỖI
     if (type === 'ERROR') {
-        showToast('❌ ' + (data.message || 'Đã xảy ra lỗi!'));
+        // Phòng không còn (máy chủ khởi động lại / phòng đã đóng) trong lúc đang tự kết nối lại
+        if (data.code === 'ROOM_NOT_FOUND' && onlineState.roomCode && lastJoinAttemptCode === onlineState.roomCode) {
+            leaveOnlineRoom({ notifyServer: false, silent: true });
+        }
+        notify('❌ ' + (data.message || 'Đã xảy ra lỗi!'));
         return;
     }
 }
 
+function sameFenPosition(a, b) {
+    const pa = String(a || '').trim().split(/\s+/);
+    const pb = String(b || '').trim().split(/\s+/);
+    return pa[0] === pb[0] && (pa[1] || 'w') === (pb[1] || 'w');
+}
+
+// Tắt hẳn engine Pikafish để giải phóng RAM khi chơi online (chỉ dùng engine khi phân tích)
+function shutdownEngineForOnline() {
+    import('./engine.js').then(m => {
+        if (typeof m.shutdownEngine === 'function') m.shutdownEngine();
+    }).catch(() => {});
+}
+
 // Bắt đầu vào chế độ Online Game
-async function enterOnlineGame(initialFen, myColor) {
-    clearUserDrawLines();
+async function enterOnlineGame(initialFen, myColor, rejoin = false) {
+    const serverFen = initialFen || START_FEN;
+    // Kết nối lại cùng phòng và thế cờ không đổi → giữ nguyên biên bản nước đi, không vẽ lại từ đầu
+    const keepBoard = rejoin && state.appMode === 'online' && state.currentNode && sameFenPosition(state.currentNode.fen, serverFen);
+
     state.appMode = 'online';
     state.appSettings.appMode = 'online';
     document.body.classList.add('mode-online');
@@ -790,21 +969,24 @@ async function enterOnlineGame(initialFen, myColor) {
     state.isAnalyzing = false;
     state.aiPlaysRed = false;
     state.aiPlaysBlack = false;
-    if (state.engineModule) {
-        state.engineModule.sendCommand('stop');
-    }
+    shutdownEngineForOnline();
 
     // Tự động xoay bàn cờ: nếu cầm Đen thì xoay để quân Đen ở dưới
     state.isBoardFlipped = (myColor === 'black');
 
-    // Tự động chuyển tab dưới sang Biên Bản
-    const historyTabBtn = document.querySelector('.lower-tab-btn[data-tab="history"]');
-    if (historyTabBtn) historyTabBtn.click();
+    if (keepBoard) {
+        if (state.currentSituation) renderBoardFull(state.currentSituation);
+    } else {
+        clearUserDrawLines();
+        // Tự động chuyển tab dưới sang Biên Bản
+        const historyTabBtn = document.querySelector('.lower-tab-btn[data-tab="history"]');
+        if (historyTabBtn) historyTabBtn.click();
+        await initGame(serverFen, false);
+    }
 
-    await initGame(initialFen || START_FEN, false);
     updateOnlineRoomBar();
     updatePlayerStripsUI();
-    toggleChatBox(true);
+    if (!rejoin) toggleChatBox(true, { focus: false });
     window.dispatchEvent(new Event('resize'));
 }
 
@@ -812,18 +994,18 @@ async function enterOnlineGame(initialFen, myColor) {
 export async function createOnlineRoom(hostColor = 'red') {
     showLoading('Đang tạo phòng...');
     try {
-        const ws = await connectOnlineSocket();
+        await connectOnlineSocket();
         const initialFen = state.currentNode ? state.currentNode.fen : START_FEN;
 
-        ws.send(JSON.stringify({
+        wsSend({
             type: 'CREATE_ROOM',
             userId: getOrCreateUserId(),
             userName: getOnlineUserName(),
             hostColor: hostColor,
             initialFen: initialFen
-        }));
+        });
     } catch (e) {
-        showToast('❌ Lỗi tạo phòng: ' + e.message);
+        showToast('❌ Lỗi tạo phòng: ' + escapeHtml(e.message));
     } finally {
         hideLoading();
     }
@@ -837,17 +1019,18 @@ export async function joinOnlineRoom(roomCode) {
         return;
     }
 
-    showLoading(`Đang vào phòng ${code}...`);
+    showLoading(`Đang vào phòng ${escapeHtml(code)}...`);
     try {
-        const ws = await connectOnlineSocket();
-        ws.send(JSON.stringify({
+        await connectOnlineSocket();
+        lastJoinAttemptCode = code;
+        wsSend({
             type: 'JOIN_ROOM',
             userId: getOrCreateUserId(),
             userName: getOnlineUserName(),
             roomCode: code
-        }));
+        });
     } catch (e) {
-        showToast('❌ Lỗi kết nối phòng: ' + e.message);
+        showToast('❌ Lỗi kết nối phòng: ' + escapeHtml(e.message));
     } finally {
         hideLoading();
     }
@@ -855,44 +1038,47 @@ export async function joinOnlineRoom(roomCode) {
 
 // Gửi nước đi khi người chơi thực hiện
 export function sendOnlineMove(moveCommand, newFen, nextTurn) {
-    if (!isOnlineMode() || !onlineState.roomCode || !onlineState.ws) return;
+    if (!isOnlineMode() || !onlineState.roomCode) return;
     if (onlineState.isSpectator) return;
 
-    onlineState.ws.send(JSON.stringify({
+    const sent = wsSend({
         type: 'MOVE',
         roomCode: onlineState.roomCode,
         moveCommand: moveCommand,
         newFen: newFen,
         nextTurn: nextTurn
-    }));
+    });
+    if (!sent) {
+        showToast('⚠️ Chưa gửi được nước đi do mất kết nối. Bàn cờ sẽ đồng bộ lại khi có mạng.');
+    }
 }
 
 // Chủ phòng gửi cấu hình đồng hồ tính giờ
 export function sendTimerSettings(settings) {
-    if (!onlineState.isHost || !onlineState.ws || !onlineState.roomCode) {
+    if (!onlineState.isHost || !onlineState.roomCode) {
         showToast('⚠️ Chỉ Chủ phòng mới có quyền cài đặt đồng hồ!');
         return;
     }
 
-    onlineState.ws.send(JSON.stringify({
+    wsSend({
         type: 'SET_TIMER_SETTINGS',
         roomCode: onlineState.roomCode,
         settings: settings
-    }));
+    });
 }
 
 // Chủ phòng chọn khán giả vào đánh thay thế
 export function substituteGuest(targetUserId) {
-    if (!onlineState.isHost || !onlineState.ws || !onlineState.roomCode) {
+    if (!onlineState.isHost || !onlineState.roomCode) {
         showToast('⚠️ Chỉ Chủ phòng mới có quyền thay đổi người đánh!');
         return;
     }
 
-    onlineState.ws.send(JSON.stringify({
+    wsSend({
         type: 'SUBSTITUTE_GUEST',
         roomCode: onlineState.roomCode,
         targetUserId: targetUserId
-    }));
+    });
 }
 
 // Render danh sách trong Modal Khán Giả
@@ -901,27 +1087,33 @@ export function renderSpectatorsModalList() {
     const playersEl = document.getElementById('modal-players-current');
     if (!listEl || !playersEl) return;
 
+    const myId = getOrCreateUserId();
     const hostUser = onlineState.players?.host;
     const guestUser = onlineState.players?.guest;
+    const statusOf = (user) => {
+        if (!user) return '<span style="font-size: 11px; color: #ea580c; font-weight: bold;">⏳ Trống</span>';
+        if (user.connected === false) return '<span style="font-size: 11px; color: #ef4444; font-weight: bold;">📡 Mất mạng</span>';
+        return '<span style="font-size: 11px; color: #16a34a; font-weight: bold;">🟢 Đang đấu</span>';
+    };
 
     playersEl.innerHTML = `
         <div style="display: flex; align-items: center; justify-content: space-between; background: #fff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px 8px;">
             <div>
-                <strong>👑 ${hostUser?.userName || 'Chủ phòng'}</strong>
+                <strong>👑 ${escapeHtml(hostUser?.userName || 'Chủ phòng')}</strong>
                 <span style="font-size: 11px; color: ${hostUser?.color === 'red' ? '#dc2626' : '#1e293b'}; font-weight: bold;">
                     (${hostUser?.color === 'red' ? '🔴 Đỏ' : '⚫ Đen'})
                 </span>
-                ${hostUser?.userId === onlineState.ws?.userId ? '<span style="font-size: 10px; color: #0284c7;">(Bạn)</span>' : ''}
+                ${hostUser?.userId === myId ? '<span style="font-size: 10px; color: #0284c7;">(Bạn)</span>' : ''}
             </div>
-            <span style="font-size: 11px; color: #16a34a; font-weight: bold;">🟢 Đang đấu</span>
+            ${statusOf(hostUser)}
         </div>
         <div style="display: flex; align-items: center; justify-content: space-between; background: #fff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px 8px;">
             <div>
-                <strong>⚔️ ${guestUser?.userName || 'Đang chờ đối thủ...'}</strong>
+                <strong>⚔️ ${escapeHtml(guestUser?.userName || 'Đang chờ đối thủ...')}</strong>
                 ${guestUser ? `<span style="font-size: 11px; color: ${guestUser.color === 'red' ? '#dc2626' : '#1e293b'}; font-weight: bold;">(${guestUser.color === 'red' ? '🔴 Đỏ' : '⚫ Đen'})</span>` : ''}
-                ${guestUser && guestUser.userId === onlineState.ws?.userId ? '<span style="font-size: 10px; color: #0284c7;">(Bạn)</span>' : ''}
+                ${guestUser && guestUser.userId === myId ? '<span style="font-size: 10px; color: #0284c7;">(Bạn)</span>' : ''}
             </div>
-            <span style="font-size: 11px; color: ${guestUser ? '#16a34a' : '#ea580c'}; font-weight: bold;">${guestUser ? '🟢 Đang đấu' : '⏳ Trống'}</span>
+            ${statusOf(guestUser)}
         </div>
     `;
 
@@ -932,16 +1124,17 @@ export function renderSpectatorsModalList() {
     }
 
     listEl.innerHTML = specs.map(spec => {
-        const isMe = spec.userId === onlineState.ws?.userId;
-        const subButton = (onlineState.isHost && !isMe)
-            ? `<button class="btn-substitute" data-userid="${spec.userId}" data-username="${spec.userName}">⚔️ Cho Vào Đánh</button>`
+        const isMe = spec.userId === myId;
+        const canSubstitute = onlineState.isHost && !isMe && spec.connected !== false;
+        const subButton = canSubstitute
+            ? `<button class="btn-substitute" data-userid="${escapeHtml(spec.userId)}" data-username="${escapeHtml(spec.userName)}">⚔️ Cho Vào Đánh</button>`
             : '';
 
         return `
             <div class="spectator-item-row">
                 <div style="display: flex; align-items: center; gap: 6px;">
-                    <span>👁️</span>
-                    <strong>${spec.userName}</strong>
+                    <span>${spec.connected === false ? '📡' : '👁️'}</span>
+                    <strong>${escapeHtml(spec.userName)}</strong>
                     ${isMe ? '<span style="font-size: 10.5px; color: #0284c7; font-weight: bold;">(Bạn)</span>' : ''}
                 </div>
                 <div>${subButton}</div>
@@ -951,8 +1144,8 @@ export function renderSpectatorsModalList() {
 
     listEl.querySelectorAll('.btn-substitute').forEach(btn => {
         btn.addEventListener('click', (e) => {
-            const uid = e.target.getAttribute('data-userid');
-            const uname = e.target.getAttribute('data-username');
+            const uid = e.currentTarget.getAttribute('data-userid');
+            const uname = e.currentTarget.getAttribute('data-username');
             if (uid) {
                 if (confirm(`Bạn có chắc muốn chọn [${uname}] vào thi đấu tiếp?`)) {
                     substituteGuest(uid);
@@ -965,70 +1158,73 @@ export function renderSpectatorsModalList() {
 
 // Chủ phòng gửi cập nhật thế cờ (sau khi xếp quân xong)
 export function sendHostBoardUpdate(newFenFull) {
-    if (!isOnlineMode() || !onlineState.roomCode || !onlineState.isHost || !onlineState.ws) return;
+    if (!isOnlineMode() || !onlineState.roomCode || !onlineState.isHost) return;
 
     const turn = newFenFull.split(' ')[1] || 'w';
     onlineState.currentTurn = turn;
 
-    onlineState.ws.send(JSON.stringify({
+    wsSend({
         type: 'HOST_UPDATE_BOARD',
         roomCode: onlineState.roomCode,
         fen: newFenFull,
         currentTurn: turn
-    }));
+    });
     updateOnlineRoomBar();
 }
 
 // Chủ phòng đổi lượt đi
 export function sendHostSetTurn(turn) {
-    if (!isOnlineMode() || !onlineState.roomCode || !onlineState.isHost || !onlineState.ws) return;
+    if (!isOnlineMode() || !onlineState.roomCode || !onlineState.isHost) return;
 
     onlineState.currentTurn = turn;
-    onlineState.ws.send(JSON.stringify({
+    wsSend({
         type: 'HOST_SET_TURN',
         roomCode: onlineState.roomCode,
         turn: turn
-    }));
+    });
     updateOnlineRoomBar();
 }
 
 // Chủ phòng hoán đổi phe (Đỏ / Đen)
 export function sendHostSwapSides() {
-    if (!isOnlineMode() || !onlineState.roomCode || !onlineState.isHost || !onlineState.ws) return;
+    if (!isOnlineMode() || !onlineState.roomCode || !onlineState.isHost) return;
 
-    onlineState.ws.send(JSON.stringify({
+    wsSend({
         type: 'HOST_SWAP_SIDES',
         roomCode: onlineState.roomCode
-    }));
+    });
 }
 
 // Chủ phòng khởi động ván mới
 export function sendResetGame() {
-    if (!isOnlineMode() || !onlineState.roomCode || !onlineState.isHost || !onlineState.ws) return;
+    if (!isOnlineMode() || !onlineState.roomCode || !onlineState.isHost) return;
 
-    onlineState.ws.send(JSON.stringify({
+    wsSend({
         type: 'RESET_GAME',
         roomCode: onlineState.roomCode,
         fen: START_FEN
-    }));
+    });
 }
 
-// Rời phòng
-export function leaveOnlineRoom() {
+// Rời phòng (notifyServer=false: phòng đã đóng / phiên bị thay thế → chỉ dọn dẹp phía máy mình)
+export function leaveOnlineRoom(options = {}) {
+    const { notifyServer = true, silent = false } = options || {};
     sessionStorage.removeItem('tuongky_active_room');
 
-    if (onlineState.ws && onlineState.roomCode) {
-        try {
-            onlineState.ws.send(JSON.stringify({
-                type: 'LEAVE_ROOM',
-                roomCode: onlineState.roomCode
-            }));
-        } catch (e) {}
+    if (notifyServer && onlineState.roomCode) {
+        wsSend({
+            type: 'LEAVE_ROOM',
+            roomCode: onlineState.roomCode
+        });
     }
 
-    stopVoiceChat();
-    stopOnlineCamera();
-    removeAllPeers();
+    if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+    }
+    reconnectAttempts = 0;
+
+    teardownVoice();
     stopClockTicker();
 
     onlineState.roomCode = null;
@@ -1038,9 +1234,9 @@ export function leaveOnlineRoom() {
     onlineState.opponentJoined = false;
     onlineState.opponentConnected = false;
     onlineState.isSpectator = false;
-    updateVoiceParticipantsUI();
+    onlineState.isHost = false;
     document.body.classList.remove('mode-online');
-    showToast('🚪 Đã rời phòng chơi.');
+    if (!silent) showToast('🚪 Đã rời phòng chơi.');
 
     const topStrip = document.getElementById('online-player-strip-top');
     const botStrip = document.getElementById('online-player-strip-bottom');
@@ -1049,7 +1245,7 @@ export function leaveOnlineRoom() {
     if (botStrip) botStrip.style.display = 'none';
     if (chatBox) chatBox.style.display = 'none';
 
-    // Chuyển lại về chế độ Phân Tích mặc định
+    // Chuyển lại về chế độ Phân Tích mặc định (engine sẽ được khởi động lại ở đó)
     import('./events.js').then(m => {
         if (m.switchMode) m.switchMode('analyze');
     });
@@ -1081,7 +1277,8 @@ export function updateOnlineRoomBar() {
     const myNameEl = document.getElementById('online-bar-myname');
     if (myNameEl) {
         const roleStr = onlineState.isSpectator ? 'Khán giả' : (onlineState.isHost ? 'Chủ' : 'Khách');
-        myNameEl.innerHTML = `<strong>${onlineState.myUserName}</strong> (${roleStr}) ✏️`;
+        const netStr = isOnlineSocketReady() ? '' : ' 📡';
+        myNameEl.innerHTML = `<strong>${escapeHtml(onlineState.myUserName)}</strong> (${roleStr}) ✏️${netStr}`;
     }
 
     const mySideEl = document.getElementById('online-bar-myside');
@@ -1097,14 +1294,15 @@ export function updateOnlineRoomBar() {
 
     const oppStatusEl = document.getElementById('online-bar-oppstatus');
     if (oppStatusEl) {
+        const oppName = escapeHtml(onlineState.opponentUserName);
         if (onlineState.isSpectator) {
-            const hostName = onlineState.players?.host?.userName || 'Chủ phòng';
-            const guestName = onlineState.players?.guest?.userName || 'Chờ đối thủ';
+            const hostName = escapeHtml(onlineState.players?.host?.userName || 'Chủ phòng');
+            const guestName = escapeHtml(onlineState.players?.guest?.userName || 'Chờ đối thủ');
             oppStatusEl.innerHTML = `<span style="color: #475569; font-weight: 600;">${hostName} vs ${guestName}</span>`;
         } else if (onlineState.opponentJoined && onlineState.opponentConnected) {
-            oppStatusEl.innerHTML = `<span style="color: #16a34a; font-weight: bold;" title="Đối thủ">🟢 ${onlineState.opponentUserName}</span>`;
+            oppStatusEl.innerHTML = `<span style="color: #16a34a; font-weight: bold;" title="Đối thủ">🟢 ${oppName}</span>`;
         } else if (onlineState.opponentJoined && !onlineState.opponentConnected) {
-            oppStatusEl.innerHTML = `<span style="color: #ef4444; font-weight: bold;" title="Đối thủ tạm rớt mạng">⏳ ${onlineState.opponentUserName} (90s)</span>`;
+            oppStatusEl.innerHTML = `<span style="color: #ef4444; font-weight: bold;" title="Đối thủ tạm rớt mạng">⏳ ${oppName} (90s)</span>`;
         } else {
             oppStatusEl.innerHTML = '<span style="color: #ea580c; font-weight: bold;">⏳ Chờ đối thủ...</span>';
         }
@@ -1119,7 +1317,7 @@ export function updateOnlineRoomBar() {
         } else if (isMyTurn) {
             turnIndicatorEl.innerHTML = '<span style="color: #16a34a; font-weight: bold;">👉 LƯỢT CỦA BẠN</span>';
         } else {
-            turnIndicatorEl.innerHTML = `<span style="color: #64748b;">⏳ Đợi ${onlineState.opponentUserName || 'đối thủ'}</span>`;
+            turnIndicatorEl.innerHTML = `<span style="color: #64748b;">⏳ Đợi ${escapeHtml(onlineState.opponentUserName || 'đối thủ')}</span>`;
         }
     }
 
@@ -1143,8 +1341,15 @@ export function updateOnlineRoomBar() {
             btnMic.innerHTML = '🎙️ Mic: Bật';
         } else {
             btnMic.classList.remove('active-mic');
-            btnMic.innerHTML = '🎙️ Mic: Tắt';
+            btnMic.innerHTML = '🔇 Mic: Tắt';
         }
+    }
+
+    // Cập nhật trạng thái nút Loa
+    const btnSpeaker = document.getElementById('btn-online-speaker');
+    if (btnSpeaker) {
+        btnSpeaker.innerHTML = onlineState.isSpeakerMuted ? '🔈 Loa: Tắt' : '🔊 Loa';
+        btnSpeaker.classList.toggle('speaker-muted', onlineState.isSpeakerMuted);
     }
 
     // Cập nhật trạng thái nút Cam
@@ -1179,8 +1384,9 @@ export function updateOnlineRoomBar() {
 // ============================================================
 // TÍNH NĂNG CHAT TRÒ CHUYỆN TRONG TRẬN
 // ============================================================
+const MAX_CHAT_MESSAGES = 150; // giới hạn số tin giữ trên màn hình để không phình DOM/RAM khi chơi lâu
 
-export function toggleChatBox(forceOpen) {
+export function toggleChatBox(forceOpen, options = {}) {
     const chatBox = document.getElementById('online-chat-box');
     if (!chatBox) return;
 
@@ -1194,22 +1400,25 @@ export function toggleChatBox(forceOpen) {
             badge.style.display = 'none';
             badge.textContent = '0';
         }
+        // Không tự bật bàn phím trên điện thoại (che mất bàn cờ); chỉ focus khi người dùng chủ động mở chat trên máy tính
+        const wantFocus = options.focus !== false && !isTouchDevice();
         const input = document.getElementById('online-chat-input');
-        if (input) setTimeout(() => input.focus(), 50);
+        if (input && wantFocus) setTimeout(() => input.focus(), 50);
         scrollChatToBottom();
     }
 }
 
 export function sendOnlineChat(text) {
     const msg = String(text || '').trim();
-    if (!msg || !onlineState.ws || !onlineState.roomCode) return;
+    if (!msg || !onlineState.roomCode) return;
 
-    onlineState.ws.send(JSON.stringify({
+    const sent = wsSend({
         type: 'CHAT',
         roomCode: onlineState.roomCode,
         senderName: getOnlineUserName(),
         text: msg
-    }));
+    });
+    if (!sent) showToast('⚠️ Đang mất kết nối, tin nhắn chưa được gửi.');
 }
 
 function appendChatMessage(data) {
@@ -1233,6 +1442,10 @@ function appendChatMessage(data) {
     row.appendChild(info);
     chatMessages.appendChild(row);
 
+    while (chatMessages.childElementCount > MAX_CHAT_MESSAGES) {
+        chatMessages.firstElementChild.remove();
+    }
+
     scrollChatToBottom();
 
     // Nếu hộp chat đang đóng và người gửi không phải mình -> hiển thị badge số tin chưa đọc
@@ -1244,7 +1457,7 @@ function appendChatMessage(data) {
             badge.style.display = 'inline-block';
             badge.textContent = onlineState.unreadChatCount > 9 ? '9+' : onlineState.unreadChatCount;
         }
-        showToast(`💬 ${data.senderName}: ${data.text.slice(0, 35)}...`);
+        notify(`💬 ${data.senderName}: ${String(data.text || '').slice(0, 35)}...`);
     }
 }
 
@@ -1256,297 +1469,830 @@ function scrollChatToBottom() {
 }
 
 // ============================================================
-// TÍNH NĂNG WEBRTC: VOICE CHAT & VIDEO CAMERA
-// Full Mesh Conference — hỗ trợ N người đàm thoại đồng thời (Zoom-like)
+// VOICE & VIDEO WEBRTC — MESH "LUÔN KẾT NỐI" (KIỂU GOOGLE MEET / ZOOM)
+// ------------------------------------------------------------
+// - Vào phòng là tự kết nối voice với mọi người (tối đa VOICE_MESH_LIMIT người), không cần ai bật mic trước.
+// - Bật/tắt mic, camera chỉ thay track (replaceTrack) → tức thì, không phải đàm phán lại, tắt mic vẫn nghe được.
+// - Chỉ bên có UID lớn hơn tạo offer → không bao giờ "đụng offer"; bên còn lại gửi WEBRTC_REQUEST khi cần.
+// - Mỗi RTCPeerConnection có pcId riêng → nhận ra ngay khi bên kia tải lại trang/tạo kết nối mới.
+// - TURN lấy từ máy chủ (/api/ice-servers) → kết nối được giữa 4G, wifi công ty, mạng khác nhau.
+// - Tự phục hồi: ICE restart khi mạng chập chờn/đổi wifi↔4G, dựng lại kết nối nếu vẫn hỏng, watchdog 15s.
 // ============================================================
 
-const RTC_CONFIG = {
-    iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' },
-        { urls: 'stun:stun2.l.google.com:19302' },
-        { urls: 'stun:stun.cloudflare.com:3478' }
-    ]
-};
+const VOICE_MESH_LIMIT = 8;
+const FALLBACK_ICE_SERVERS = [
+    { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
+    { urls: 'stun:stun.cloudflare.com:3478' }
+];
+const CONNECT_TIMEOUT_MS = 15000;      // quá thời gian này chưa kết nối được → tự phục hồi
+const DISCONNECTED_GRACE_MS = 3000;    // 'disconnected' kéo dài quá mức này → ICE restart
+const MAX_ICE_RESTARTS = 2;            // ICE restart tối đa trước khi dựng lại hẳn kết nối
+const REQUEST_CONNECT_DELAY_MS = 1200; // bên UID nhỏ chờ offer một chút trước khi chủ động nhờ kết nối
+const VOICE_HEALTH_INTERVAL_MS = 5000;
+const AUDIO_MAX_BITRATE = 32000;       // Opus giọng nói 32kbps: rõ, nhẹ mạng 4G
+const VIDEO_MAX_BITRATE = 300000;
 
-// Hàng đợi lưu tạm ICE candidates nhận được trước khi setRemoteDescription hoàn tất
-const pendingIceCandidates = new Map(); // targetUserId -> Array<candidate>
+let iceConfigCache = null;   // { config, hasTurn, expiresAt }
+let iceConfigPromise = null;
+let voiceEpoch = 0;          // tăng mỗi lần rời phòng → huỷ mọi tác vụ voice cũ còn đang chạy
+const signalQueues = new Map();          // uid -> Promise (xử lý tuần tự signaling theo từng người)
+const pendingConnectRequests = new Map(); // uid -> timeoutId
+const lastConnectRequestAt = new Map();   // uid -> thời điểm gửi WEBRTC_REQUEST gần nhất
+const rebuildState = new Map();           // uid -> { count, timer }
+let voiceHealthTimer = null;
+let speakingTimer = null;
+let audioUnlockNeeded = false;
+let voiceUIScheduled = false;
+let meshLimitNotified = false;
+let turnNoticeShown = false;
 
-async function flushPendingIceCandidates(targetUserId, pc) {
-    const queue = pendingIceCandidates.get(targetUserId);
-    if (queue && queue.length > 0) {
-        while (queue.length > 0) {
-            const cand = queue.shift();
+function isInRoom() {
+    return !!onlineState.roomCode;
+}
+
+function isInitiatorFor(remoteUid) {
+    return getOrCreateUserId() > remoteUid;
+}
+
+function newPcId() {
+    return Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
+}
+
+function getLiveTrack(stream, kind) {
+    if (!stream) return null;
+    const tracks = kind === 'audio' ? stream.getAudioTracks() : stream.getVideoTracks();
+    return tracks.find(t => t.readyState === 'live') || null;
+}
+
+function enqueueSignal(uid, task) {
+    const epoch = voiceEpoch;
+    const prev = signalQueues.get(uid) || Promise.resolve();
+    const next = prev.then(() => {
+        if (epoch !== voiceEpoch) return;
+        return task();
+    }).catch(err => console.warn(`[WebRTC] Lỗi signaling với ${uid}:`, err));
+    signalQueues.set(uid, next);
+    next.then(() => {
+        if (signalQueues.get(uid) === next) signalQueues.delete(uid);
+    });
+    return next;
+}
+
+// Lấy cấu hình ICE (STUN + TURN) từ máy chủ, có cache
+async function getRtcConfig() {
+    if (iceConfigCache && iceConfigCache.expiresAt > Date.now()) return iceConfigCache.config;
+    if (!iceConfigPromise) {
+        iceConfigPromise = (async () => {
+            let iceServers = FALLBACK_ICE_SERVERS;
+            let hasTurn = false;
+            let ttl = 600;
             try {
-                await pc.addIceCandidate(new RTCIceCandidate(cand));
+                const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+                const timer = ctrl ? setTimeout(() => ctrl.abort(), 5000) : null;
+                const res = await fetch(`/api/ice-servers?uid=${encodeURIComponent(getOrCreateUserId())}`, { cache: 'no-store', signal: ctrl ? ctrl.signal : undefined });
+                if (timer) clearTimeout(timer);
+                if (res.ok) {
+                    const data = await res.json();
+                    if (Array.isArray(data.iceServers) && data.iceServers.length) {
+                        iceServers = data.iceServers;
+                        hasTurn = !!data.hasTurn;
+                        ttl = Number(data.ttl) || 3600;
+                    }
+                }
             } catch (e) {
-                console.warn(`[WebRTC] Lỗi flush candidate cho ${targetUserId}:`, e);
+                console.warn('[WebRTC] Không lấy được ICE servers từ máy chủ, dùng STUN mặc định:', e);
             }
+            if (!hasTurn) {
+                console.warn('[WebRTC] Máy chủ chưa cấu hình TURN → người chơi ở mạng khác nhau có thể không nghe được nhau.');
+            }
+            const config = { iceServers, bundlePolicy: 'max-bundle', rtcpMuxPolicy: 'require' };
+            iceConfigCache = { config, hasTurn, expiresAt: Date.now() + Math.max(60, ttl - 300) * 1000 };
+            return config;
+        })().finally(() => {
+            iceConfigPromise = null;
+        });
+    }
+    return iceConfigPromise;
+}
+
+// Opus: bật DTX (im lặng thì gần như không tốn băng thông), FEC (chống mất gói trên 4G), giới hạn bitrate
+function tuneOpusSdp(sdp) {
+    if (!sdp) return sdp;
+    const rtpmap = sdp.match(/a=rtpmap:(\d+) opus\/48000/i);
+    if (!rtpmap) return sdp;
+    const pt = rtpmap[1];
+    const fmtpRe = new RegExp(`a=fmtp:${pt} ([^\\r\\n]*)`);
+    if (!fmtpRe.test(sdp)) return sdp;
+    const extra = { usedtx: '1', useinbandfec: '1', maxaveragebitrate: String(AUDIO_MAX_BITRATE) };
+    return sdp.replace(fmtpRe, (_line, params) => {
+        const map = new Map();
+        params.split(';').map(p => p.trim()).filter(Boolean).forEach(p => {
+            const i = p.indexOf('=');
+            if (i > 0) map.set(p.slice(0, i), p.slice(i + 1));
+            else map.set(p, '');
+        });
+        Object.entries(extra).forEach(([k, v]) => {
+            if (!map.has(k)) map.set(k, v);
+        });
+        return `a=fmtp:${pt} ` + [...map].map(([k, v]) => (v !== '' ? `${k}=${v}` : k)).join(';');
+    });
+}
+
+// Danh sách người được kết nối voice (giữ thứ tự của máy chủ: chủ phòng, khách, khán giả theo thứ tự vào)
+function getVoiceTargets() {
+    const myId = getOrCreateUserId();
+    const eligible = onlineState.roomMembers.filter(m => m.userId).slice(0, VOICE_MESH_LIMIT);
+    const inMesh = eligible.some(m => m.userId === myId);
+    return { inMesh, targets: eligible.filter(m => m.userId !== myId) };
+}
+
+function shouldConnectTo(uid) {
+    const { inMesh, targets } = getVoiceTargets();
+    return inMesh && targets.some(m => m.userId === uid);
+}
+
+function getMember(uid) {
+    return onlineState.roomMembers.find(m => m.userId === uid) || null;
+}
+
+// Đối thủ (kỳ thủ còn lại) — camera chỉ gửi giữa 2 người đang đấu
+function getOpponentMember() {
+    if (onlineState.isSpectator) return null;
+    const myId = getOrCreateUserId();
+    return onlineState.roomMembers.find(m => m.userId !== myId && (m.role === 'host' || m.role === 'guest')) || null;
+}
+
+function isPeerConnected(peer) {
+    const s = peer.pc.connectionState || peer.pc.iceConnectionState;
+    return s === 'connected' || s === 'completed';
+}
+
+// ============================
+// QUẢN LÝ PEER CONNECTION
+// ============================
+
+async function createPeer(uid, initiator) {
+    const epoch = voiceEpoch;
+    const config = await getRtcConfig();
+    if (epoch !== voiceEpoch || !isInRoom()) return null;
+
+    const pc = new RTCPeerConnection(config);
+    const peer = {
+        uid,
+        pc,
+        initiator,
+        pcId: newPcId(),
+        remotePcId: null,
+        audioTx: null,
+        videoTx: null,
+        audioEl: null,
+        remoteVideoTrack: null,
+        pendingCandidates: [],
+        iceRestarts: 0,
+        connectTimer: null,
+        disconnectTimer: null,
+        status: 'connecting',
+        createdAt: Date.now(),
+        closed: false,
+        tuned: false,
+        speaking: false
+    };
+
+    if (initiator) {
+        // Tạo sẵn kênh audio + video 2 chiều; track thật được gắn/gỡ bằng replaceTrack
+        peer.audioTx = pc.addTransceiver('audio', { direction: 'sendrecv' });
+        peer.videoTx = pc.addTransceiver('video', { direction: 'sendrecv' });
+        await applyLocalTracks(peer);
+    }
+
+    pc.ontrack = (ev) => handleRemoteTrack(peer, ev);
+    pc.onicecandidate = (ev) => {
+        if (!ev.candidate || peer.closed) return;
+        wsSend({
+            type: 'WEBRTC_ICE',
+            roomCode: onlineState.roomCode,
+            targetUserId: uid,
+            pcId: peer.pcId,
+            toPcId: peer.remotePcId,
+            candidate: typeof ev.candidate.toJSON === 'function' ? ev.candidate.toJSON() : ev.candidate
+        });
+    };
+    const onStateChange = () => handlePeerStateChange(peer);
+    pc.onconnectionstatechange = onStateChange;
+    pc.oniceconnectionstatechange = onStateChange;
+
+    onlineState.peerConnections.set(uid, peer);
+    armConnectWatchdog(peer);
+    scheduleVoiceUIUpdate();
+    return peer;
+}
+
+function closePeer(uid) {
+    const peer = onlineState.peerConnections.get(uid);
+    if (!peer) return;
+    peer.closed = true;
+    clearTimeout(peer.connectTimer);
+    clearTimeout(peer.disconnectTimer);
+    try {
+        peer.pc.ontrack = null;
+        peer.pc.onicecandidate = null;
+        peer.pc.onconnectionstatechange = null;
+        peer.pc.oniceconnectionstatechange = null;
+        peer.pc.close();
+    } catch (e) {}
+    if (peer.audioEl) {
+        peer.audioEl.srcObject = null;
+        peer.audioEl.remove();
+        peer.audioEl = null;
+    }
+    onlineState.peerConnections.delete(uid);
+    refreshRemoteVideo();
+    scheduleVoiceUIUpdate();
+}
+
+// Gắn đúng track của mình vào từng kết nối: mic cho mọi người, camera chỉ cho đối thủ
+async function applyLocalTracks(peer) {
+    if (!peer || peer.closed) return;
+    const micTrack = onlineState.isMicActive ? getLiveTrack(onlineState.localStream, 'audio') : null;
+    const opponent = getOpponentMember();
+    const camTrack = (onlineState.isCameraActive && opponent && opponent.userId === peer.uid)
+        ? getLiveTrack(onlineState.localVideoStream, 'video')
+        : null;
+    await replaceSenderTrack(peer.audioTx, micTrack);
+    await replaceSenderTrack(peer.videoTx, camTrack);
+}
+
+async function replaceSenderTrack(transceiver, track) {
+    if (!transceiver || !transceiver.sender) return;
+    if (transceiver.sender.track === track) return;
+    try {
+        await transceiver.sender.replaceTrack(track);
+    } catch (e) {
+        console.warn('[WebRTC] replaceTrack lỗi:', e);
+    }
+}
+
+async function applyLocalTracksToAll() {
+    const peers = [...onlineState.peerConnections.values()];
+    await Promise.all(peers.map(p => applyLocalTracks(p)));
+}
+
+// Bên nhận offer: lấy 2 transceiver (audio/video) do bên kia tạo và mở chiều gửi
+function bindTransceivers(peer) {
+    const transceivers = peer.pc.getTransceivers();
+    if (!peer.audioTx) peer.audioTx = transceivers.find(t => t.receiver && t.receiver.track && t.receiver.track.kind === 'audio') || null;
+    if (!peer.videoTx) peer.videoTx = transceivers.find(t => t.receiver && t.receiver.track && t.receiver.track.kind === 'video') || null;
+    [peer.audioTx, peer.videoTx].forEach(t => {
+        if (t && t.direction !== 'sendrecv' && t.direction !== 'stopped') {
+            try { t.direction = 'sendrecv'; } catch (e) {}
         }
+    });
+}
+
+async function setSenderEncoding(sender, encoding) {
+    if (!sender || typeof sender.getParameters !== 'function') return;
+    try {
+        const params = sender.getParameters();
+        if (!params.encodings || params.encodings.length === 0) return;
+        Object.assign(params.encodings[0], encoding);
+        await sender.setParameters(params);
+    } catch (e) {}
+}
+
+// Ưu tiên gói tin giọng nói + giới hạn bitrate camera (chạy 1 lần khi kết nối thành công)
+async function tuneSenders(peer) {
+    if (peer.tuned) return;
+    peer.tuned = true;
+    await setSenderEncoding(peer.audioTx && peer.audioTx.sender, { maxBitrate: AUDIO_MAX_BITRATE, priority: 'high', networkPriority: 'high' });
+    await setSenderEncoding(peer.videoTx && peer.videoTx.sender, { maxBitrate: VIDEO_MAX_BITRATE, maxFramerate: 15 });
+}
+
+function handleRemoteTrack(peer, ev) {
+    if (peer.closed) return;
+    const track = ev.track;
+    if (track.kind === 'audio') {
+        if (!peer.audioEl) {
+            const el = document.createElement('audio');
+            el.autoplay = true;
+            el.setAttribute('playsinline', '');
+            el.dataset.uid = peer.uid;
+            (document.getElementById('online-remote-audios') || document.body).appendChild(el);
+            peer.audioEl = el;
+        }
+        peer.audioEl.srcObject = new MediaStream([track]);
+        peer.audioEl.muted = onlineState.isSpeakerMuted;
+        playRemoteAudio(peer.audioEl);
+    } else if (track.kind === 'video') {
+        peer.remoteVideoTrack = track;
+        refreshRemoteVideo();
+    }
+}
+
+function playRemoteAudio(el) {
+    if (!el || onlineState.isSpeakerMuted) return;
+    const p = el.play();
+    if (p && typeof p.catch === 'function') {
+        p.catch(() => requireAudioUnlock());
+    }
+}
+
+// iPhone/Safari chặn tự phát âm thanh khi chưa chạm màn hình → chạm bất kỳ đâu (hoặc nút "Bấm để nghe") sẽ mở khoá
+function requireAudioUnlock() {
+    if (audioUnlockNeeded) return;
+    audioUnlockNeeded = true;
+    ['click', 'touchend', 'keydown'].forEach(evt => document.addEventListener(evt, unlockRemoteAudio, { capture: true, once: true }));
+    scheduleVoiceUIUpdate();
+}
+
+export function unlockRemoteAudio() {
+    if (!audioUnlockNeeded) return;
+    audioUnlockNeeded = false;
+    ['click', 'touchend', 'keydown'].forEach(evt => document.removeEventListener(evt, unlockRemoteAudio, { capture: true }));
+    for (const peer of onlineState.peerConnections.values()) {
+        if (peer.audioEl) playRemoteAudio(peer.audioEl);
+    }
+    scheduleVoiceUIUpdate();
+}
+
+// Hiển thị camera của đối thủ (nếu đối thủ đang bật cam)
+function refreshRemoteVideo() {
+    const remoteVideo = document.getElementById('online-remote-video');
+    const placeholder = document.getElementById('cam-top-placeholder');
+    if (!remoteVideo) return;
+
+    let track = null;
+    const opponent = getOpponentMember();
+    if (opponent && opponent.camOn) {
+        const peer = onlineState.peerConnections.get(opponent.userId);
+        if (peer && peer.remoteVideoTrack && peer.remoteVideoTrack.readyState === 'live') track = peer.remoteVideoTrack;
+    }
+
+    const current = remoteVideo.srcObject && remoteVideo.srcObject.getVideoTracks ? remoteVideo.srcObject.getVideoTracks()[0] : null;
+    if (track) {
+        if (current !== track) {
+            remoteVideo.muted = true;
+            remoteVideo.srcObject = new MediaStream([track]);
+            remoteVideo.play().catch(() => {});
+        }
+        remoteVideo.style.display = 'block';
+        if (placeholder) placeholder.style.display = 'none';
+    } else {
+        if (remoteVideo.srcObject) remoteVideo.srcObject = null;
+        remoteVideo.style.display = 'none';
+        if (placeholder) placeholder.style.display = 'flex';
     }
 }
 
 // ============================
-// PEER CONNECTION MANAGER
+// TRẠNG THÁI KẾT NỐI & TỰ PHỤC HỒI
 // ============================
 
-// Gắn local tracks (audio/video) vào peer connection một cách an toàn (tránh add trùng track)
-function attachLocalTracks(pc, targetUserId) {
-    if (!pc) return;
-    const senders = pc.getSenders();
+function armConnectWatchdog(peer) {
+    clearTimeout(peer.connectTimer);
+    peer.connectTimer = setTimeout(() => {
+        if (!peer.closed && isInRoom() && !isPeerConnected(peer)) {
+            console.warn(`[WebRTC] Quá ${CONNECT_TIMEOUT_MS / 1000}s chưa kết nối được với ${peer.uid} → phục hồi`);
+            recoverPeer(peer);
+        }
+    }, CONNECT_TIMEOUT_MS);
+}
 
-    // Gắn local audio tracks (nếu mic đang bật)
-    if (onlineState.localStream) {
-        onlineState.localStream.getTracks().forEach(track => {
-            if (!senders.some(s => s.track === track)) {
-                try { pc.addTrack(track, onlineState.localStream); } catch (e) {}
+function handlePeerStateChange(peer) {
+    if (peer.closed) return;
+    const pc = peer.pc;
+    const s = pc.connectionState || pc.iceConnectionState;
+
+    if (s === 'connected' || s === 'completed') {
+        peer.status = 'connected';
+        peer.iceRestarts = 0;
+        clearTimeout(peer.connectTimer);
+        clearTimeout(peer.disconnectTimer);
+        peer.disconnectTimer = null;
+        const rb = rebuildState.get(peer.uid);
+        if (rb) rb.count = 0;
+        tuneSenders(peer);
+        if (peer.audioEl) playRemoteAudio(peer.audioEl);
+        maybeShowTurnNotice();
+    } else if (s === 'disconnected') {
+        // Chập chờn ngắn (đổi wifi ↔ 4G, sóng yếu) → đợi một chút rồi ICE restart nếu chưa tự hồi
+        peer.status = 'reconnecting';
+        if (!peer.disconnectTimer) {
+            peer.disconnectTimer = setTimeout(() => {
+                peer.disconnectTimer = null;
+                if (!peer.closed && !isPeerConnected(peer)) recoverPeer(peer);
+            }, DISCONNECTED_GRACE_MS);
+        }
+    } else if (s === 'failed') {
+        peer.status = 'failed';
+        recoverPeer(peer);
+    } else if (s === 'new' || s === 'checking' || s === 'connecting') {
+        if (peer.status !== 'reconnecting') peer.status = 'connecting';
+    }
+    scheduleVoiceUIUpdate();
+}
+
+function recoverPeer(peer) {
+    if (peer.closed || !isInRoom()) return;
+    const uid = peer.uid;
+    if (peer.initiator) {
+        enqueueSignal(uid, async () => {
+            if (onlineState.peerConnections.get(uid) !== peer || peer.closed || isPeerConnected(peer)) return;
+            if (peer.remotePcId && peer.iceRestarts < MAX_ICE_RESTARTS) {
+                peer.iceRestarts++;
+                console.log(`[WebRTC] ICE restart lần ${peer.iceRestarts} với ${uid}`);
+                await sendOffer(peer, true);
+                armConnectWatchdog(peer);
+            } else {
+                scheduleRebuild(uid);
             }
         });
+    } else {
+        // Bên nhận không tự tạo offer → nhờ bên khởi tạo ICE restart (hoặc dựng lại hẳn nếu đã thử nhiều lần)
+        const reason = peer.iceRestarts < MAX_ICE_RESTARTS ? 'ice-restart' : 'reset';
+        peer.iceRestarts++;
+        requestFromInitiator(uid, reason, 0);
+        armConnectWatchdog(peer);
+    }
+}
+
+// Dựng lại kết nối với backoff (2s, 4s, 8s... tối đa 30s) để không spam khi mạng hỏng hẳn
+function scheduleRebuild(uid) {
+    const rb = rebuildState.get(uid) || { count: 0, timer: null };
+    if (rb.timer) return;
+    const delay = rb.count === 0 ? 0 : Math.min(30000, 2000 * Math.pow(2, rb.count - 1));
+    rb.count++;
+    rb.timer = setTimeout(() => {
+        rb.timer = null;
+        enqueueSignal(uid, () => rebuildPeerNow(uid));
+    }, delay);
+    rebuildState.set(uid, rb);
+}
+
+// Chỉ gọi bên trong enqueueSignal(uid, ...)
+async function rebuildPeerNow(uid) {
+    if (!isInRoom() || !shouldConnectTo(uid) || !isInitiatorFor(uid)) return;
+    closePeer(uid);
+    const peer = await createPeer(uid, true);
+    if (peer) await sendOffer(peer);
+}
+
+function recoverStalledPeers() {
+    if (!isInRoom()) return;
+    for (const peer of onlineState.peerConnections.values()) {
+        if (!isPeerConnected(peer)) recoverPeer(peer);
+    }
+    reconcileVoiceMesh();
+}
+
+// ============================
+// SIGNALING: OFFER / ANSWER / ICE / REQUEST
+// ============================
+
+async function sendOffer(peer, iceRestart = false) {
+    const pc = peer.pc;
+    if (peer.closed) return;
+    if (pc.signalingState === 'have-local-offer') {
+        // Offer trước chưa được trả lời (có thể đã thất lạc) → huỷ để tạo offer mới
+        try { await pc.setLocalDescription({ type: 'rollback' }); } catch (e) {}
+    }
+    if (pc.signalingState !== 'stable') return;
+    const offer = await pc.createOffer(iceRestart ? { iceRestart: true } : {});
+    if (peer.closed || pc.signalingState !== 'stable') return;
+    await pc.setLocalDescription(offer);
+    wsSend({
+        type: 'WEBRTC_OFFER',
+        roomCode: onlineState.roomCode,
+        targetUserId: peer.uid,
+        pcId: peer.pcId,
+        toPcId: peer.remotePcId,
+        offer: { type: 'offer', sdp: pc.localDescription.sdp }
+    });
+}
+
+function clearPendingConnectRequest(uid) {
+    const t = pendingConnectRequests.get(uid);
+    if (t) clearTimeout(t);
+    pendingConnectRequests.delete(uid);
+}
+
+// Bên UID nhỏ nhờ bên UID lớn (bên khởi tạo) kết nối / ICE restart / dựng lại
+function requestFromInitiator(uid, reason = 'connect', delayMs = 0) {
+    clearPendingConnectRequest(uid);
+    const send = () => {
+        pendingConnectRequests.delete(uid);
+        if (!isInRoom() || !shouldConnectTo(uid)) return;
+        const peer = onlineState.peerConnections.get(uid);
+        if (reason === 'connect' && peer && !peer.closed) return; // offer đã tới trong lúc chờ
+        lastConnectRequestAt.set(uid, Date.now());
+        wsSend({
+            type: 'WEBRTC_REQUEST',
+            roomCode: onlineState.roomCode,
+            targetUserId: uid,
+            reason,
+            pcId: peer ? peer.pcId : null,
+            knownRemotePcId: peer ? peer.remotePcId : null
+        });
+    };
+    if (delayMs > 0) {
+        lastConnectRequestAt.set(uid, Date.now());
+        pendingConnectRequests.set(uid, setTimeout(send, delayMs));
+    } else {
+        send();
+    }
+}
+
+function handleRtcSignal(data) {
+    const uid = data.fromUserId;
+    if (!uid || uid === getOrCreateUserId() || !isInRoom()) return;
+    if (data.type === 'WEBRTC_OFFER') enqueueSignal(uid, () => handleRtcOffer(uid, data));
+    else if (data.type === 'WEBRTC_ANSWER') enqueueSignal(uid, () => handleRtcAnswer(uid, data));
+    else if (data.type === 'WEBRTC_ICE') enqueueSignal(uid, () => handleRtcIce(uid, data));
+    else if (data.type === 'WEBRTC_REQUEST') enqueueSignal(uid, () => handleRtcRequest(uid, data));
+}
+
+async function handleRtcOffer(uid, data) {
+    if (!data.offer || !data.offer.sdp || !data.pcId) return;
+    if (isInitiatorFor(uid)) return; // theo giao thức chỉ bên UID lớn hơn gửi offer
+    if (!shouldConnectTo(uid)) return;
+
+    let peer = onlineState.peerConnections.get(uid);
+    if (data.toPcId) {
+        // Offer đàm phán lại (ICE restart) dành cho 1 kết nối cụ thể của mình
+        if (!peer || peer.pcId !== data.toPcId || peer.remotePcId !== data.pcId) {
+            // Kết nối đó không còn (mình đã tải lại trang...) → nhờ bên kia dựng kết nối mới
+            requestFromInitiator(uid, 'reset', 0);
+            return;
+        }
+    } else if (peer && peer.remotePcId && peer.remotePcId !== data.pcId) {
+        // Bên kia vừa tạo kết nối mới → bỏ kết nối cũ
+        closePeer(uid);
+        peer = null;
     }
 
-    // Gắn local video tracks (nếu cam đang bật VÀ cả 2 bên đều là host/guest — camera chỉ cho 2 người đấu)
-    if (onlineState.localVideoStream && !onlineState.isSpectator) {
-        const targetMember = onlineState.roomMembers.find(m => m.userId === targetUserId);
-        const isTargetPlayer = targetMember && (targetMember.role === 'host' || targetMember.role === 'guest');
-        if (isTargetPlayer) {
-            onlineState.localVideoStream.getTracks().forEach(track => {
-                if (!senders.some(s => s.track === track)) {
-                    try { pc.addTrack(track, onlineState.localVideoStream); } catch (e) {}
-                }
+    if (!peer) {
+        peer = await createPeer(uid, false);
+        if (!peer) return;
+    }
+    peer.remotePcId = data.pcId;
+    clearPendingConnectRequest(uid);
+
+    const pc = peer.pc;
+    if (pc.signalingState !== 'stable') {
+        try { await pc.setLocalDescription({ type: 'rollback' }); } catch (e) {}
+    }
+    await pc.setRemoteDescription({ type: 'offer', sdp: tuneOpusSdp(data.offer.sdp) });
+    if (peer.closed) return;
+    bindTransceivers(peer);
+    await applyLocalTracks(peer);
+    await flushPendingCandidates(peer);
+
+    const answer = await pc.createAnswer();
+    if (peer.closed) return;
+    await pc.setLocalDescription(answer);
+    wsSend({
+        type: 'WEBRTC_ANSWER',
+        roomCode: onlineState.roomCode,
+        targetUserId: uid,
+        pcId: peer.pcId,
+        toPcId: peer.remotePcId,
+        answer: { type: 'answer', sdp: pc.localDescription.sdp }
+    });
+    armConnectWatchdog(peer);
+}
+
+async function handleRtcAnswer(uid, data) {
+    const peer = onlineState.peerConnections.get(uid);
+    if (!peer || peer.closed || !peer.initiator || !data.answer || !data.answer.sdp) return;
+    if (data.toPcId !== peer.pcId) return; // trả lời cho kết nối cũ
+    if (peer.remotePcId && peer.remotePcId !== data.pcId) {
+        // Bên kia đã dựng kết nối mới → kết nối hiện tại không dùng được nữa
+        await rebuildPeerNow(uid);
+        return;
+    }
+    if (peer.pc.signalingState !== 'have-local-offer') return;
+    peer.remotePcId = data.pcId;
+    await peer.pc.setRemoteDescription({ type: 'answer', sdp: tuneOpusSdp(data.answer.sdp) });
+    await flushPendingCandidates(peer);
+}
+
+async function handleRtcIce(uid, data) {
+    const peer = onlineState.peerConnections.get(uid);
+    if (!peer || peer.closed || !data.candidate) return;
+    if (data.toPcId && data.toPcId !== peer.pcId) return;
+    if (peer.remotePcId && data.pcId !== peer.remotePcId) return;
+    if (!peer.remotePcId || !peer.pc.remoteDescription) {
+        peer.pendingCandidates.push({ pcId: data.pcId, candidate: data.candidate });
+        if (peer.pendingCandidates.length > 100) peer.pendingCandidates.shift();
+        return;
+    }
+    try {
+        await peer.pc.addIceCandidate(data.candidate);
+    } catch (e) {}
+}
+
+async function flushPendingCandidates(peer) {
+    const list = peer.pendingCandidates;
+    peer.pendingCandidates = [];
+    for (const item of list) {
+        if (item.pcId !== peer.remotePcId) continue;
+        try {
+            await peer.pc.addIceCandidate(item.candidate);
+        } catch (e) {}
+    }
+}
+
+// Bên khởi tạo nhận yêu cầu kết nối / ICE restart / dựng lại từ bên UID nhỏ
+async function handleRtcRequest(uid, data) {
+    if (!isInitiatorFor(uid) || !shouldConnectTo(uid)) return;
+    const reason = data.reason || 'connect';
+    const peer = onlineState.peerConnections.get(uid);
+
+    if (peer && !peer.closed) {
+        const sameSession = !!data.knownRemotePcId && data.knownRemotePcId === peer.pcId;
+        if (reason === 'connect') {
+            if (sameSession) return; // bên kia đang giữ đúng kết nối hiện tại
+            // Offer vừa gửi đang trên đường tới → không dựng lại
+            if (!peer.remotePcId && Date.now() - peer.createdAt < CONNECT_TIMEOUT_MS) return;
+        }
+        if (reason === 'ice-restart' && sameSession && peer.remotePcId) {
+            if (isPeerConnected(peer)) return;
+            if (peer.iceRestarts < MAX_ICE_RESTARTS) {
+                peer.iceRestarts++;
+                await sendOffer(peer, true);
+                armConnectWatchdog(peer);
+                return;
+            }
+        }
+    }
+    await rebuildPeerNow(uid);
+}
+
+// Đối chiếu danh sách thành viên ↔ kết nối voice hiện có (chạy khi danh sách đổi + mỗi 5s để tự phục hồi)
+function reconcileVoiceMesh() {
+    if (!isInRoom() || typeof RTCPeerConnection === 'undefined') return;
+    const { inMesh, targets } = getVoiceTargets();
+    const wanted = new Set(targets.map(m => m.userId));
+
+    for (const [uid, peer] of [...onlineState.peerConnections.entries()]) {
+        if (!inMesh || !wanted.has(uid)) {
+            enqueueSignal(uid, async () => closePeer(uid));
+        } else if (peer.pc.signalingState === 'closed') {
+            // Kết nối bị trình duyệt đóng ngầm (iOS chạy nền...) → bỏ để tạo lại bên dưới / ở lượt kiểm tra sau
+            enqueueSignal(uid, async () => {
+                if (onlineState.peerConnections.get(uid) === peer) closePeer(uid);
             });
         }
     }
-}
 
-// Tạo PeerConnection riêng cho 1 user cụ thể
-function createPeerForUser(targetUserId) {
-    if (onlineState.peerConnections.has(targetUserId)) {
-        const pc = onlineState.peerConnections.get(targetUserId);
-        attachLocalTracks(pc, targetUserId);
-        return pc;
-    }
-
-    const pc = new RTCPeerConnection(RTC_CONFIG);
-    attachLocalTracks(pc, targetUserId);
-
-    // Khi nhận audio/video từ peer này
-    pc.ontrack = (event) => {
-        if (event.track.kind === 'audio') {
-            let audioEl = onlineState.remoteAudios.get(targetUserId);
-            if (!audioEl) {
-                audioEl = document.createElement('audio');
-                audioEl.id = `remote-audio-${targetUserId}`;
-                audioEl.autoplay = true;
-                audioEl.setAttribute('playsinline', '');
-                audioEl.setAttribute('webkit-playsinline', '');
-                // Gắn vào DOM container để mobile browser (Chrome/Safari) không chặn âm thanh
-                const container = document.getElementById('online-remote-audios') || document.body;
-                container.appendChild(audioEl);
-                onlineState.remoteAudios.set(targetUserId, audioEl);
-            }
-            audioEl.srcObject = event.streams[0] || new MediaStream([event.track]);
-            audioEl.play().catch(e => console.warn('[Voice] Tự động phát âm thanh bị chặn (cần tương tác người dùng):', e));
-        } else if (event.track.kind === 'video') {
-            // Video chỉ áp dụng cho host ↔ guest
-            const remoteVideo = document.getElementById('online-remote-video');
-            const placeholder = document.getElementById('cam-top-placeholder');
-            if (remoteVideo) {
-                remoteVideo.srcObject = event.streams[0] || new MediaStream([event.track]);
-                remoteVideo.style.display = 'block';
-                if (placeholder) placeholder.style.display = 'none';
-                remoteVideo.play().catch(e => console.warn('[Video] Auto-play bị chặn:', e));
-            }
+    if (!inMesh) {
+        if (!meshLimitNotified && onlineState.roomMembers.length > VOICE_MESH_LIMIT) {
+            meshLimitNotified = true;
+            showToast(`ℹ️ Phòng đông: voice chỉ dành cho ${VOICE_MESH_LIMIT} người đầu tiên, bạn vẫn xem cờ & chat bình thường.`);
         }
-        updateVoiceParticipantsUI();
-    };
-
-    // ICE candidate → gửi kèm targetUserId
-    pc.onicecandidate = (event) => {
-        if (event.candidate && onlineState.ws && onlineState.roomCode) {
-            onlineState.ws.send(JSON.stringify({
-                type: 'WEBRTC_ICE',
-                roomCode: onlineState.roomCode,
-                targetUserId: targetUserId,
-                candidate: event.candidate
-            }));
-        }
-    };
-
-    pc.oniceconnectionstatechange = () => {
-        console.log(`[WebRTC] ICE ${targetUserId}: ${pc.iceConnectionState}`);
-        updateVoiceParticipantsUI();
-
-        // Xử lý khi kết nối lỗi: chỉ thử restart ICE tối đa 1 lần nếu là bên Offerer
-        if (pc.iceConnectionState === 'failed') {
-            console.warn(`[WebRTC] ICE với ${targetUserId} thất bại.`);
-            const myId = getOrCreateUserId();
-            if (myId > targetUserId && (onlineState.isMicActive || onlineState.isCameraActive) && !pc._hasRestartedIce) {
-                pc._hasRestartedIce = true;
-                setTimeout(() => {
-                    if (pc.iceConnectionState === 'failed' && (onlineState.isMicActive || onlineState.isCameraActive)) {
-                        console.log(`[WebRTC] Thử restart ICE 1 lần với ${targetUserId}...`);
-                        sendOfferTo(targetUserId, { iceRestart: true });
-                    }
-                }, 3000);
-            }
-        }
-    };
-
-    onlineState.peerConnections.set(targetUserId, pc);
-    return pc;
-}
-
-// Lấy PC đã tồn tại hoặc tạo mới
-function getPeerForUser(targetUserId) {
-    const pc = onlineState.peerConnections.get(targetUserId) || createPeerForUser(targetUserId);
-    attachLocalTracks(pc, targetUserId);
-    return pc;
-}
-
-// Xoá PC và audio element khi user rời đi
-function removePeerForUser(targetUserId) {
-    const pc = onlineState.peerConnections.get(targetUserId);
-    if (pc) {
-        try { pc.close(); } catch (e) {}
-        onlineState.peerConnections.delete(targetUserId);
-    }
-
-    pendingIceCandidates.delete(targetUserId);
-
-    const audioEl = onlineState.remoteAudios.get(targetUserId);
-    if (audioEl) {
-        audioEl.srcObject = null;
-        audioEl.pause();
-        if (audioEl.parentNode) {
-            audioEl.parentNode.removeChild(audioEl);
-        }
-        onlineState.remoteAudios.delete(targetUserId);
-    }
-    updateVoiceParticipantsUI();
-}
-
-// Cleanup khi rời phòng
-function removeAllPeers() {
-    for (const [uid] of onlineState.peerConnections) {
-        removePeerForUser(uid);
-    }
-    onlineState.peerConnections.clear();
-    onlineState.remoteAudios.clear();
-    pendingIceCandidates.clear();
-    onlineState.micUsers.clear();
-}
-
-// ============================
-// SIGNALING: OFFER / ANSWER / ICE
-// ============================
-
-// Gửi Offer tới 1 user cụ thể
-async function sendOfferTo(targetUserId, options = {}) {
-    const pc = getPeerForUser(targetUserId);
-    if (!pc || !onlineState.ws) return;
-
-    try {
-        const offerOptions = {
-            offerToReceiveAudio: true,
-            offerToReceiveVideo: true,
-            ...options
-        };
-        const offer = await pc.createOffer(offerOptions);
-        await pc.setLocalDescription(offer);
-
-        onlineState.ws.send(JSON.stringify({
-            type: 'WEBRTC_OFFER',
-            roomCode: onlineState.roomCode,
-            targetUserId: targetUserId,
-            offer: offer
-        }));
-    } catch (e) {
-        console.error(`[WebRTC] Lỗi tạo Offer cho ${targetUserId}:`, e);
-    }
-}
-
-// Xử lý Offer nhận được (từ 1 user cụ thể qua fromUserId)
-async function handleWebRTCOffer(data) {
-    const fromUserId = data.fromUserId;
-    if (!fromUserId || !data.offer) return;
-
-    try {
-        const pc = getPeerForUser(fromUserId);
-        attachLocalTracks(pc, fromUserId);
-
-        // Deterministic collision handling: bên có ID lớn hơn giữ quyền offer
-        if (pc.signalingState === 'have-local-offer') {
-            const myId = getOrCreateUserId();
-            const isPolite = myId < fromUserId; // Bên có ID nhỏ hơn sẽ rollback để nhận offer từ ID lớn hơn
-            if (isPolite) {
-                await pc.setLocalDescription({ type: 'rollback' });
-            } else {
-                return; // Impolite peer bỏ qua offer trùng
-            }
-        }
-
-        await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
-        await flushPendingIceCandidates(fromUserId, pc);
-
-        const answer = await pc.createAnswer();
-        await pc.setLocalDescription(answer);
-
-        if (onlineState.ws && onlineState.roomCode) {
-            onlineState.ws.send(JSON.stringify({
-                type: 'WEBRTC_ANSWER',
-                roomCode: onlineState.roomCode,
-                targetUserId: fromUserId,
-                answer: answer
-            }));
-        }
-    } catch (e) {
-        console.error(`[WebRTC] Lỗi xử lý Offer từ ${fromUserId}:`, e);
-    }
-}
-
-// Xử lý Answer nhận được
-async function handleWebRTCAnswer(data) {
-    const fromUserId = data.fromUserId;
-    if (!fromUserId || !data.answer) return;
-
-    const pc = onlineState.peerConnections.get(fromUserId);
-    if (!pc) return;
-
-    try {
-        if (pc.signalingState === 'have-local-offer') {
-            await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
-            await flushPendingIceCandidates(fromUserId, pc);
-        }
-    } catch (e) {
-        console.error(`[WebRTC] Lỗi xử lý Answer từ ${fromUserId}:`, e);
-    }
-}
-
-// Xử lý ICE Candidate nhận được
-async function handleWebRTCIce(data) {
-    const fromUserId = data.fromUserId;
-    if (!fromUserId || !data.candidate) return;
-
-    const pc = onlineState.peerConnections.get(fromUserId);
-    // Nếu pc chưa sẵn sàng hoặc remoteDescription chưa set → lưu vào hàng đợi
-    if (!pc || !pc.remoteDescription || !pc.remoteDescription.type) {
-        if (!pendingIceCandidates.has(fromUserId)) {
-            pendingIceCandidates.set(fromUserId, []);
-        }
-        pendingIceCandidates.get(fromUserId).push(data.candidate);
+        scheduleVoiceUIUpdate();
         return;
     }
 
-    try {
-        await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
-    } catch (e) {
-        console.warn(`[WebRTC] Lỗi thêm ICE từ ${fromUserId}:`, e);
+    const now = Date.now();
+    for (const m of targets) {
+        if (!m.connected) continue; // đang chờ kết nối lại: giữ nguyên kết nối cũ (có thể vẫn đang chạy tốt)
+        const uid = m.userId;
+        const existing = onlineState.peerConnections.get(uid);
+        if (existing && existing.pc.signalingState !== 'closed') continue;
+        if (isInitiatorFor(uid)) {
+            enqueueSignal(uid, async () => {
+                const current = onlineState.peerConnections.get(uid);
+                if ((current && current.pc.signalingState !== 'closed') || !shouldConnectTo(uid)) return;
+                if (current) closePeer(uid);
+                const peer = await createPeer(uid, true);
+                if (peer) await sendOffer(peer);
+            });
+        } else if (!pendingConnectRequests.has(uid)) {
+            const last = lastConnectRequestAt.get(uid) || 0;
+            if (now - last > 8000) {
+                // Lần đầu chờ offer một chút; nếu offer bị thất lạc thì nhắc lại sau mỗi ~8s
+                requestFromInitiator(uid, 'connect', last ? 0 : REQUEST_CONNECT_DELAY_MS);
+            }
+        }
+    }
+
+    applyLocalTracksToAll();
+    refreshRemoteVideo();
+    scheduleVoiceUIUpdate();
+}
+
+function startVoiceMonitors() {
+    if (!voiceHealthTimer) {
+        voiceHealthTimer = setInterval(() => {
+            if (isInRoom() && !document.hidden) reconcileVoiceMesh();
+        }, VOICE_HEALTH_INTERVAL_MS);
+    }
+    if (!speakingTimer) {
+        speakingTimer = setInterval(updateSpeakingIndicators, 300);
     }
 }
 
+function stopVoiceMonitors() {
+    if (voiceHealthTimer) clearInterval(voiceHealthTimer);
+    if (speakingTimer) clearInterval(speakingTimer);
+    voiceHealthTimer = null;
+    speakingTimer = null;
+}
+
+// Rời phòng: đóng mọi kết nối, tắt mic/cam
+function teardownVoice() {
+    voiceEpoch++;
+    stopVoiceMonitors();
+    for (const uid of [...onlineState.peerConnections.keys()]) closePeer(uid);
+    signalQueues.clear();
+    pendingConnectRequests.forEach(t => clearTimeout(t));
+    pendingConnectRequests.clear();
+    lastConnectRequestAt.clear();
+    rebuildState.forEach(rb => { if (rb.timer) clearTimeout(rb.timer); });
+    rebuildState.clear();
+
+    if (onlineState.localStream) {
+        onlineState.localStream.getTracks().forEach(t => t.stop());
+        onlineState.localStream = null;
+    }
+    onlineState.isMicActive = false;
+    stopOnlineCamera(true);
+    onlineState.micUsers.clear();
+    meshLimitNotified = false;
+    if (audioUnlockNeeded) {
+        audioUnlockNeeded = false;
+        ['click', 'touchend', 'keydown'].forEach(evt => document.removeEventListener(evt, unlockRemoteAudio, { capture: true }));
+    }
+    refreshRemoteVideo();
+    renderVoicePanel();
+}
+
 // ============================
-// BẬT / TẮT MICROPHONE (FULL MESH)
+// BẬT / TẮT MICROPHONE
 // ============================
+
+function describeMediaError(err, device) {
+    const name = err && err.name;
+    if (name === 'NotAllowedError' || name === 'SecurityError') return `Bạn đã chặn quyền ${device}. Hãy cho phép trong cài đặt trình duyệt rồi thử lại.`;
+    if (name === 'NotFoundError' || name === 'OverconstrainedError') return `Không tìm thấy ${device} trên thiết bị.`;
+    if (name === 'NotReadableError' || name === 'AbortError') return `${device} đang bị ứng dụng khác sử dụng.`;
+    return (err && err.message) || `Không mở được ${device}.`;
+}
+
+function ensureMediaSupport() {
+    if (!window.isSecureContext) throw new Error('Micro/Camera chỉ hoạt động trên HTTPS (hoặc localhost).');
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('Trình duyệt không hỗ trợ Micro/Camera.');
+}
+
+async function ensureMicStream() {
+    if (getLiveTrack(onlineState.localStream, 'audio')) return;
+    ensureMediaSupport();
+    const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+            channelCount: 1
+        },
+        video: false
+    });
+    const track = stream.getAudioTracks()[0];
+    if (track) {
+        try { track.contentHint = 'speech'; } catch (e) {}
+        // Micro bị ngắt từ ngoài (rút tai nghe, hệ điều hành thu hồi quyền...)
+        track.onended = () => {
+            if (onlineState.localStream !== stream) return;
+            onlineState.localStream = null;
+            if (onlineState.isMicActive) {
+                onlineState.isMicActive = false;
+                onlineState.micUsers.delete(getOrCreateUserId());
+                applyLocalTracksToAll();
+                sendVoiceStatus(false);
+                updateOnlineRoomBar();
+                scheduleVoiceUIUpdate();
+                showToast('⚠️ Micro vừa bị ngắt (thiết bị hoặc quyền truy cập).');
+            }
+        };
+    }
+    onlineState.localStream = stream;
+}
+
+async function setMicEnabled(on) {
+    if (on) {
+        await ensureMicStream();
+        unlockRemoteAudio(); // đang có thao tác chạm của người dùng → tranh thủ mở khoá âm thanh
+    }
+    const track = getLiveTrack(onlineState.localStream, 'audio');
+    if (track) track.enabled = on;
+    onlineState.isMicActive = on && !!track;
+
+    const myId = getOrCreateUserId();
+    if (onlineState.isMicActive) onlineState.micUsers.add(myId);
+    else onlineState.micUsers.delete(myId);
+
+    await applyLocalTracksToAll();
+    sendVoiceStatus(onlineState.isMicActive);
+}
 
 export async function toggleOnlineVoiceMic() {
     if (!onlineState.roomCode) {
@@ -1554,85 +2300,34 @@ export async function toggleOnlineVoiceMic() {
         return;
     }
 
-    if (onlineState.isMicActive) {
-        stopVoiceChat();
-        showToast('🔇 Đã tắt Microphone đàm thoại.');
-    } else {
-        try {
-            await startVoiceChat();
-            showToast('🎙️ Đã bật Microphone đàm thoại!');
-        } catch (err) {
-            console.error('[Voice] Lỗi mở Mic:', err);
-            showToast('❌ Không thể mở Microphone: ' + (err.message || 'Chưa cấp quyền mic'));
+    try {
+        if (onlineState.isMicActive) {
+            await setMicEnabled(false);
+            showToast('🔇 Đã tắt mic (bạn vẫn nghe được mọi người).');
+        } else {
+            await setMicEnabled(true);
+            showToast('🎙️ Đã bật mic!');
         }
+    } catch (err) {
+        console.error('[Voice] Lỗi mở Mic:', err);
+        showToast('❌ ' + escapeHtml(describeMediaError(err, 'micro')));
     }
     updateOnlineRoomBar();
-    updateVoiceParticipantsUI();
+    scheduleVoiceUIUpdate();
 }
 
-// Bật mic → tạo PeerConnection tới các members trong phòng (chỉ gửi offer nếu myId > member.userId)
-async function startVoiceChat() {
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        throw new Error('Trình duyệt không hỗ trợ truy cập Microphone!');
+// Tắt/bật loa: tắt tiếng toàn bộ voice của người khác trên máy mình
+export function toggleOnlineSpeaker() {
+    onlineState.isSpeakerMuted = !onlineState.isSpeakerMuted;
+    for (const peer of onlineState.peerConnections.values()) {
+        if (!peer.audioEl) continue;
+        peer.audioEl.muted = onlineState.isSpeakerMuted;
+        if (!onlineState.isSpeakerMuted) playRemoteAudio(peer.audioEl);
     }
-
-    const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true
-        },
-        video: false
-    });
-
-    onlineState.localStream = stream;
-    onlineState.isMicActive = true;
-
-    const myId = getOrCreateUserId();
-    onlineState.micUsers.add(myId);
-
-    // Gửi Offer tới các thành viên mà mình là Offerer (myId > member.userId)
-    for (const member of onlineState.roomMembers) {
-        if (member.userId === myId) continue;
-        const pc = getPeerForUser(member.userId);
-        attachLocalTracks(pc, member.userId);
-        if (myId > member.userId) {
-            await sendOfferTo(member.userId);
-        }
-    }
-
-    sendVoiceStatus(true);
-    updateVoiceParticipantsUI();
-}
-
-function stopVoiceChat() {
-    onlineState.isMicActive = false;
-
-    if (onlineState.localStream) {
-        onlineState.localStream.getTracks().forEach(track => track.stop());
-        onlineState.localStream = null;
-    }
-
-    const myId = getOrCreateUserId();
-    onlineState.micUsers.delete(myId);
-
-    // Nếu không bật cam, dọn dẹp các peers không còn ai nói
-    if (!onlineState.isCameraActive) {
-        removeAllPeers();
-    } else {
-        // Nếu cam vẫn bật, chỉ gỡ audio track chứ không đóng PC
-        for (const [uid, pc] of onlineState.peerConnections) {
-            const senders = pc.getSenders();
-            senders.forEach(sender => {
-                if (sender.track && sender.track.kind === 'audio') {
-                    try { pc.removeTrack(sender); } catch (e) {}
-                }
-            });
-        }
-    }
-
-    sendVoiceStatus(false);
-    updateVoiceParticipantsUI();
+    if (!onlineState.isSpeakerMuted) unlockRemoteAudio();
+    showToast(onlineState.isSpeakerMuted ? '🔈 Đã tắt loa voice.' : '🔊 Đã bật loa voice.');
+    updateOnlineRoomBar();
+    scheduleVoiceUIUpdate();
 }
 
 // ============================
@@ -1659,24 +2354,30 @@ export async function toggleOnlineCamera() {
             showToast('📹 Đã bật Camera!');
         } catch (err) {
             console.error('[Camera] Lỗi mở Cam:', err);
-            showToast('❌ Không thể mở Camera: ' + (err.message || 'Chưa cấp quyền cam'));
+            showToast('❌ ' + escapeHtml(describeMediaError(err, 'camera')));
         }
     }
     updateOnlineRoomBar();
 }
 
 async function startOnlineCamera() {
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        throw new Error('Trình duyệt không hỗ trợ truy cập Camera!');
-    }
-
+    ensureMediaSupport();
     const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 320 }, height: { ideal: 240 }, facingMode: 'user' },
+        video: { width: { ideal: 320 }, height: { ideal: 240 }, frameRate: { ideal: 15, max: 20 }, facingMode: 'user' },
         audio: false
     });
 
     onlineState.localVideoStream = stream;
     onlineState.isCameraActive = true;
+    const track = stream.getVideoTracks()[0];
+    if (track) {
+        track.onended = () => {
+            if (onlineState.localVideoStream === stream) {
+                stopOnlineCamera();
+                updateOnlineRoomBar();
+            }
+        };
+    }
 
     // Gắn vào video preview của mình
     const localVideo = document.getElementById('online-local-video');
@@ -1685,26 +2386,16 @@ async function startOnlineCamera() {
         localVideo.srcObject = stream;
         localVideo.style.display = 'block';
         if (localPlaceholder) localPlaceholder.style.display = 'none';
-        localVideo.play().catch(e => console.warn(e));
+        localVideo.play().catch(() => {});
     }
 
-    // Camera chỉ kết nối với đối thủ (host ↔ guest), không gửi tới spectators
-    const myId = getOrCreateUserId();
-    const opponentMember = onlineState.roomMembers.find(m => {
-        if (m.userId === myId) return false;
-        return m.role === 'host' || m.role === 'guest';
-    });
-
-    if (opponentMember) {
-        const pc = getPeerForUser(opponentMember.userId);
-        attachLocalTracks(pc, opponentMember.userId);
-        await sendOfferTo(opponentMember.userId);
-    }
-
+    // Camera chỉ gửi tới đối thủ (host ↔ guest), không gửi tới khán giả
+    await applyLocalTracksToAll();
     sendCameraStatus(true);
 }
 
-export function stopOnlineCamera() {
+export function stopOnlineCamera(silent = false) {
+    const wasActive = onlineState.isCameraActive || !!onlineState.localVideoStream;
     onlineState.isCameraActive = false;
 
     if (onlineState.localVideoStream) {
@@ -1722,50 +2413,32 @@ export function stopOnlineCamera() {
         localPlaceholder.style.display = 'flex';
     }
 
-    // Gỡ video track khỏi tất cả PeerConnections
-    for (const [uid, pc] of onlineState.peerConnections) {
-        const senders = pc.getSenders();
-        senders.forEach(sender => {
-            if (sender.track && sender.track.kind === 'video') {
-                try { pc.removeTrack(sender); } catch (e) {}
-            }
-        });
-    }
+    // Gỡ camera khỏi các kết nối (giữ nguyên kết nối voice)
+    applyLocalTracksToAll();
 
-    sendCameraStatus(false);
-
-    // Nếu mic cũng đã tắt → dọn dẹp hết PC
-    if (!onlineState.isMicActive) {
-        removeAllPeers();
-    }
+    if (wasActive && !silent) sendCameraStatus(false);
 }
 
-function sendCameraStatus(isActive) {
-    if (onlineState.ws && onlineState.roomCode) {
-        onlineState.ws.send(JSON.stringify({
+function sendCameraStatus(isActive, silent = false) {
+    if (onlineState.roomCode) {
+        wsSend({
             type: 'CAMERA_STATUS',
             roomCode: onlineState.roomCode,
-            isCameraActive: isActive
-        }));
+            isCameraActive: isActive,
+            silent
+        });
     }
 }
 
 function handleCameraStatus(data) {
-    const remoteVideo = document.getElementById('online-remote-video');
-    const placeholder = document.getElementById('cam-top-placeholder');
-    const fromName = data.fromUserName || onlineState.opponentUserName || 'Đối thủ';
+    const member = getMember(data.fromUserId);
+    if (member) member.camOn = !!data.isCameraActive;
+    refreshRemoteVideo();
 
-    if (data.isCameraActive) {
-        if (remoteVideo) remoteVideo.style.display = 'block';
-        if (placeholder) placeholder.style.display = 'none';
-        showToast(`📹 ${fromName} đã bật Camera.`);
-    } else {
-        if (remoteVideo) {
-            remoteVideo.style.display = 'none';
-            remoteVideo.srcObject = null;
-        }
-        if (placeholder) placeholder.style.display = 'flex';
-        showToast(`📷 ${fromName} đã tắt Camera.`);
+    const opponent = getOpponentMember();
+    if (!data.silent && opponent && opponent.userId === data.fromUserId) {
+        const fromName = data.fromUserName || onlineState.opponentUserName || 'Đối thủ';
+        notify(data.isCameraActive ? `📹 ${fromName} đã bật Camera.` : `📷 ${fromName} đã tắt Camera.`);
     }
 }
 
@@ -1773,75 +2446,137 @@ function handleCameraStatus(data) {
 // VOICE STATUS BROADCAST
 // ============================
 
-function sendVoiceStatus(isActive) {
-    if (onlineState.ws && onlineState.roomCode) {
-        onlineState.ws.send(JSON.stringify({
+function sendVoiceStatus(isActive, silent = false) {
+    if (onlineState.roomCode) {
+        wsSend({
             type: 'VOICE_STATUS',
             roomCode: onlineState.roomCode,
-            isMicActive: isActive
-        }));
+            isMicActive: isActive,
+            silent
+        });
     }
 }
 
 function handleVoiceStatus(data) {
-    const fromName = data.fromUserName || data.fromRole || 'Ai đó';
     const fromUserId = data.fromUserId;
     if (!fromUserId) return;
+    const member = getMember(fromUserId);
+    if (member) member.micOn = !!data.isMicActive;
 
-    if (data.isMicActive) {
-        showToast(`🎙️ ${fromName} đã bật Microphone.`);
-        onlineState.micUsers.add(fromUserId);
-        const myId = getOrCreateUserId();
-        // Chỉ gửi Offer nếu myId > fromUserId (deterministic Offerer)
-        if (myId !== fromUserId && myId > fromUserId) {
-            const pc = getPeerForUser(fromUserId);
-            sendOfferTo(fromUserId);
-        }
-    } else {
-        showToast(`🔇 ${fromName} đã tắt Microphone.`);
-        onlineState.micUsers.delete(fromUserId);
-        if (!onlineState.isMicActive && !onlineState.isCameraActive) {
-            removePeerForUser(fromUserId);
-        }
+    if (data.isMicActive) onlineState.micUsers.add(fromUserId);
+    else onlineState.micUsers.delete(fromUserId);
+
+    if (!data.silent) {
+        const fromName = data.fromUserName || data.fromRole || 'Ai đó';
+        notify(data.isMicActive ? `🎙️ ${fromName} đã bật Microphone.` : `🔇 ${fromName} đã tắt Microphone.`);
     }
-    updateVoiceParticipantsUI();
+    scheduleVoiceUIUpdate();
 }
 
 // ============================
-// VOICE PARTICIPANTS UI (PANEL HIỂN THỊ AI ĐANG NÓI)
+// VOICE PARTICIPANTS UI (AI ĐANG TRONG VOICE / ĐANG NÓI / TRẠNG THÁI KẾT NỐI)
 // ============================
 
-function updateVoiceParticipantsUI() {
+function maybeShowTurnNotice() {
+    if (turnNoticeShown || !iceConfigCache || iceConfigCache.hasTurn) return;
+    turnNoticeShown = true;
+    console.warn('[WebRTC] Đang chạy không có TURN — nếu ai đó không nghe được, hãy cấu hình TURN trên máy chủ (.env.example).');
+}
+
+function scheduleVoiceUIUpdate() {
+    if (voiceUIScheduled) return;
+    voiceUIScheduled = true;
+    setTimeout(renderVoicePanel, 60);
+}
+
+const VOICE_STATUS_TEXT = {
+    me: 'Bạn',
+    connected: 'Đã kết nối voice',
+    connecting: 'Đang kết nối voice...',
+    reconnecting: 'Đang kết nối lại voice...',
+    failed: 'Không kết nối được voice (mạng chặn) — đang thử lại',
+    away: 'Tạm mất mạng',
+    off: 'Ngoài giới hạn voice của phòng'
+};
+
+let lastVoicePanelHtml = '';
+
+function renderVoicePanel() {
+    voiceUIScheduled = false;
     const panel = document.getElementById('voice-participants-panel');
     const list = document.getElementById('voice-participants-list');
+    const unlockBtn = document.getElementById('btn-voice-unlock');
     if (!panel || !list) return;
 
-    const activePeers = [];
+    if (unlockBtn) unlockBtn.style.display = audioUnlockNeeded ? 'inline-flex' : 'none';
+
     const myId = getOrCreateUserId();
-
-    // Thêm chính mình nếu mic đang bật
-    if (onlineState.isMicActive) {
-        activePeers.push({ userId: myId, userName: onlineState.myUserName, isMe: true });
-    }
-
-    // Thêm tất cả thành viên khác đang bật mic trong phòng
-    for (const member of onlineState.roomMembers) {
-        if (member.userId === myId) continue;
-        if (onlineState.micUsers.has(member.userId)) {
-            activePeers.push({ userId: member.userId, userName: member.userName, isMe: false });
-        }
-    }
-
-    if (activePeers.length === 0) {
+    const others = onlineState.roomMembers.filter(m => m.userId !== myId);
+    if (!isInRoom() || (others.length === 0 && !audioUnlockNeeded)) {
         panel.style.display = 'none';
+        lastVoicePanelHtml = '';
+        list.innerHTML = '';
         return;
     }
-
     panel.style.display = 'flex';
-    list.innerHTML = activePeers.map(p =>
-        `<span class="voice-chip ${p.isMe ? 'voice-me' : ''}">` +
-        `<span class="voice-indicator"></span>${p.userName}</span>`
+
+    const { inMesh, targets } = getVoiceTargets();
+    const targetIds = new Set(targets.map(m => m.userId));
+    const chips = [{
+        uid: myId,
+        name: `${onlineState.myUserName} (Bạn)`,
+        mic: onlineState.isMicActive,
+        status: inMesh ? 'me' : 'off',
+        speaking: false
+    }];
+
+    others.forEach(m => {
+        const peer = onlineState.peerConnections.get(m.userId);
+        let status;
+        if (!inMesh || !targetIds.has(m.userId)) status = 'off';
+        else if (!m.connected) status = 'away';
+        else if (!peer) status = 'connecting';
+        else status = peer.status || 'connecting';
+        chips.push({ uid: m.userId, name: m.userName || 'Ẩn danh', mic: !!m.micOn && m.connected, status, speaking: !!(peer && peer.speaking) });
+    });
+
+    const html = chips.map(c =>
+        `<span class="voice-chip is-${c.status}${c.uid === myId ? ' voice-me' : ''}${c.speaking ? ' speaking' : ''}" data-uid="${escapeHtml(c.uid)}" title="${escapeHtml(VOICE_STATUS_TEXT[c.status] || '')}">` +
+        `<span class="voice-indicator"></span>${c.mic ? '🎙️' : '🔇'} ${escapeHtml(c.name)}</span>`
     ).join('');
+
+    if (html !== lastVoicePanelHtml) {
+        lastVoicePanelHtml = html;
+        list.innerHTML = html;
+    }
+}
+
+// Đèn "đang nói": đọc mức âm lượng gói tin cuối (rất nhẹ, không cần Web Audio)
+function updateSpeakingIndicators() {
+    if (document.hidden || !isInRoom()) return;
+    const list = document.getElementById('voice-participants-list');
+    const panel = document.getElementById('voice-participants-panel');
+    if (!list || !panel || panel.style.display === 'none') return;
+
+    const nowWall = performance.timeOrigin + performance.now();
+    const nowPerf = performance.now();
+    for (const peer of onlineState.peerConnections.values()) {
+        let speaking = false;
+        const receiver = peer.audioTx && peer.audioTx.receiver;
+        if (receiver && typeof receiver.getSynchronizationSources === 'function' && isPeerConnected(peer)) {
+            const src = receiver.getSynchronizationSources()[0];
+            if (src && (src.audioLevel || 0) > 0.04) {
+                const ts = src.timestamp || 0;
+                speaking = Math.abs(nowWall - ts) < 1000 || Math.abs(nowPerf - ts) < 1000;
+            }
+        }
+        if (speaking !== peer.speaking) {
+            peer.speaking = speaking;
+            const chip = list.querySelector(`[data-uid="${CSS.escape(peer.uid)}"]`);
+            if (chip) chip.classList.toggle('speaking', speaking);
+            lastVoicePanelHtml = ''; // để lần render sau không ghi đè trạng thái đang nói
+        }
+    }
 }
 
 // Kiểm tra và khôi phục phòng nếu người chơi tải lại trang (F5)
@@ -1849,4 +2584,3 @@ export function checkAndResumeSavedRoom() {
     // Không tự động kết nối lại khi tải trang để tránh nhảy vào phòng ngoài ý muốn
     sessionStorage.removeItem('tuongky_active_room');
 }
-

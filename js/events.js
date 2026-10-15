@@ -12,7 +12,7 @@ import { uploadLocalBook, deleteLocalBook, loadLocalBookFromDB } from './localbo
 import { renderEvalGraph } from './analysis/eval-graph.js';
 import { runAutoGameReview } from './analysis/auto-review.js';
 import { runAIAnnotation } from './analysis/ai-annotate.js';
-import { createOnlineRoom, joinOnlineRoom, leaveOnlineRoom, sendHostSetTurn, sendHostSwapSides, sendResetGame, updateOnlineRoomBar, onlineState, toggleOnlineVoiceMic, sendOnlineChat, toggleChatBox, getOnlineUserName, setOnlineUserName, toggleOnlineCamera, sendTimerSettings, renderSpectatorsModalList, substituteGuest } from './online.js';
+import { createOnlineRoom, joinOnlineRoom, leaveOnlineRoom, sendHostSetTurn, sendHostSwapSides, sendResetGame, updateOnlineRoomBar, onlineState, toggleOnlineVoiceMic, sendOnlineChat, toggleChatBox, getOnlineUserName, setOnlineUserName, toggleOnlineCamera, sendTimerSettings, renderSpectatorsModalList, substituteGuest, toggleOnlineSpeaker, unlockRemoteAudio } from './online.js';
 
 let pendingDeletePuzKey = "";
 
@@ -178,6 +178,11 @@ export async function switchMode(newMode, customFen = START_FEN) {
 
         const isOnline = (newMode === 'online');
         document.body.classList.toggle('mode-online', isOnline);
+
+        // Chơi online không cần engine → tắt hẳn để giải phóng RAM (vào lại Phân Tích sẽ tự khởi động lại)
+        if (isOnline) {
+            import('./engine.js').then(m => m.shutdownEngine && m.shutdownEngine());
+        }
 
         const onlineBar = document.getElementById('online-room-bar');
         if (onlineBar) {
@@ -3089,6 +3094,22 @@ function initOnlineEvents() {
         };
     }
 
+    // 7.0.1 Bật / Tắt loa (tắt tiếng voice của người khác trên máy mình)
+    const btnOnlineSpeaker = document.getElementById('btn-online-speaker');
+    if (btnOnlineSpeaker) {
+        btnOnlineSpeaker.onclick = () => {
+            toggleOnlineSpeaker();
+        };
+    }
+
+    // 7.0.2 Nút "Bấm để nghe" (iPhone/Safari chặn tự phát âm thanh)
+    const btnVoiceUnlock = document.getElementById('btn-voice-unlock');
+    if (btnVoiceUnlock) {
+        btnVoiceUnlock.onclick = () => {
+            unlockRemoteAudio();
+        };
+    }
+
     // 7.1 Bật / Tắt Camera WebRTC
     const btnOnlineCam = document.getElementById('btn-online-cam');
     if (btnOnlineCam) {
@@ -3322,6 +3343,22 @@ function initOnlineEvents() {
             setTimeout(() => {
                 openModal('online-room-modal');
             }, 300);
+
+            // Mở web từ link mời để vào phòng chơi → chưa tải engine (nặng máy) cho tới khi biết chắc người dùng không vào phòng
+            state.deferEngineInit = true;
+            const deferCheck = setInterval(() => {
+                if (!state.deferEngineInit) { clearInterval(deferCheck); return; }
+                if (state.appMode === 'online' || onlineState.roomCode) {
+                    state.deferEngineInit = false;
+                    clearInterval(deferCheck);
+                    return;
+                }
+                const joinModal = document.getElementById('online-room-modal');
+                if (!joinModal || !joinModal.classList.contains('show')) {
+                    clearInterval(deferCheck);
+                    import('./game.js').then(g => g.ensureEngineForCurrentMode());
+                }
+            }, 2000);
         }
     } catch (e) {}
 }

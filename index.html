@@ -252,8 +252,9 @@
                         👉 TỚI LƯỢT BẠN
                     </div>
                     <div class="online-tools-group">
-                        <button class="btn-online-tool" id="btn-online-mic" title="Bật/Tắt Microphone">🎙️ Mic:
+                        <button class="btn-online-tool" id="btn-online-mic" title="Bật/Tắt Microphone (tắt mic vẫn nghe được mọi người)">🔇 Mic:
                             Tắt</button>
+                        <button class="btn-online-tool" id="btn-online-speaker" title="Bật/Tắt loa (nghe voice của mọi người)">🔊 Loa</button>
                         <button class="btn-online-tool" id="btn-online-cam" title="Bật/Tắt Camera (Chỉ 2 người đấu)">📹
                             Cam: Tắt</button>
                         <button class="btn-online-tool" id="btn-online-spectators" title="Danh sách người xem">👁️ <span
@@ -286,7 +287,8 @@
                 <div id="voice-participants-panel" class="voice-participants-panel" style="display: none;">
                     <div class="voice-panel-title">
                         <span class="voice-title-icon">🎙️</span>
-                        <span>Đang đàm thoại:</span>
+                        <span>Voice trong phòng:</span>
+                        <button id="btn-voice-unlock" class="voice-unlock-btn" style="display: none;" title="Trình duyệt đang chặn âm thanh, bấm để nghe">🔊 Bấm để nghe</button>
                     </div>
                     <div id="voice-participants-list" class="voice-participants-list"></div>
                 </div>
