@@ -1,7 +1,7 @@
 // js/online.js
 import { state } from './state.js';
 import { showToast, showLoading, hideLoading, openModal, closeModal, updateTurnToggleUI } from './ui.js';
-import { initGame, executeMove } from './game.js';
+import { initGame, executeMove, getMainLine, instantJumpToNode } from './game.js';
 import { START_FEN } from './config.js';
 import { clearUserDrawLines, renderBoardFull } from './board.js';
 
@@ -187,14 +187,12 @@ export function updateClocksTick() {
     const botClock = document.getElementById('online-clock-bottom');
 
     if (!timer || !timer.enabled) {
-        if (topClock) {
-            if (topClock.textContent !== '--:--') topClock.textContent = '--:--';
-            if (topClock.className !== 'online-digital-clock') topClock.className = 'online-digital-clock';
-        }
-        if (botClock) {
-            if (botClock.textContent !== '--:--') botClock.textContent = '--:--';
-            if (botClock.className !== 'online-digital-clock') botClock.className = 'online-digital-clock';
-        }
+        [topClock, botClock].forEach(clock => {
+            if (!clock) return;
+            if (clock.textContent !== '--:--') clock.textContent = '--:--';
+            if (clock.className !== 'online-digital-clock clock-off') clock.className = 'online-digital-clock clock-off';
+            clock.title = 'Chưa bật đồng hồ (chủ phòng có thể bật trong "Đồng Hồ")';
+        });
         return;
     }
 
@@ -256,7 +254,70 @@ export function updateClocksTick() {
     }
 }
 
-// Cập nhật dải thông tin người chơi và camera trên/dưới bàn cờ
+// Thông tin kỳ thủ đang cầm 1 màu (dùng cho dải tên trên/dưới bàn cờ)
+function getPlayerByColor(color) {
+    const myId = getOrCreateUserId();
+    if (!onlineState.isSpectator) {
+        if (onlineState.myColor === color) {
+            return { userName: onlineState.myUserName, userId: myId, isMe: true, connected: isOnlineSocketReady(), micOn: onlineState.isMicActive };
+        }
+        const opp = onlineState.roomMembers.find(m => (m.role === 'host' || m.role === 'guest') && m.userId !== myId);
+        if (!onlineState.opponentJoined) return { userName: 'Đang chờ đối thủ...', userId: null, waiting: true };
+        return {
+            userName: onlineState.opponentUserName || 'Đối thủ',
+            userId: opp ? opp.userId : null,
+            connected: onlineState.opponentConnected,
+            micOn: !!(opp && opp.micOn && opp.connected)
+        };
+    }
+    const players = onlineState.players || {};
+    const p = [players.host, players.guest].find(x => x && x.color === color);
+    if (!p) return { userName: 'Chờ kỳ thủ...', userId: null, waiting: true };
+    return { userName: p.userName, userId: p.userId || null, connected: p.connected !== false, micOn: !!p.micOn && p.connected !== false };
+}
+
+function getTurnColor() {
+    const turn = state.currentNode ? state.currentNode.fen.split(' ')[1] : onlineState.currentTurn;
+    return turn === 'b' ? 'black' : 'red';
+}
+
+function renderPlayerStrip(pos, color, turnColor, bothSeated) {
+    const strip = document.getElementById(`online-player-strip-${pos}`);
+    if (!strip) return;
+    const p = getPlayerByColor(color);
+    const nameEl = document.getElementById(`online-name-${pos}`);
+    const sideEl = document.getElementById(`online-side-${pos}`);
+    const micEl = document.getElementById(`online-mic-${pos}`);
+    const turnEl = document.getElementById(`online-turn-${pos}`);
+
+    if (nameEl) {
+        const name = p.isMe ? `${p.userName} (Bạn)` : p.userName;
+        if (nameEl.textContent !== name) nameEl.textContent = name;
+        nameEl.title = name;
+    }
+    const isTurn = bothSeated && turnColor === color;
+    if (sideEl) {
+        // Dòng 2 dưới tên: bên cờ + "Lượt của bạn"/"Đang đi" (đặt ở đây để tên và đồng hồ không bị chèn ép)
+        const sideHtml = (color === 'red' ? '<span class="side-chip side-red">Đỏ</span>' : '<span class="side-chip side-black">Đen</span>') +
+            (isTurn ? `<span class="strip-turn-label">${p.isMe ? 'Lượt của bạn' : 'Đang đi…'}</span>` : '') +
+            (p.connected === false ? '<span class="strip-net">📡 mất mạng</span>' : '');
+        if (sideEl.innerHTML !== sideHtml) sideEl.innerHTML = sideHtml;
+    }
+    if (micEl) {
+        micEl.textContent = p.micOn ? '🎙️' : '';
+        micEl.title = p.micOn ? 'Đang bật mic' : '';
+    }
+
+    strip.classList.toggle('is-turn', isTurn);
+    strip.classList.toggle('is-me', !!p.isMe);
+    strip.classList.toggle('is-waiting', !!p.waiting);
+    strip.classList.toggle('is-offline', p.connected === false);
+    strip.dataset.uid = p.userId || '';
+    if (turnEl) turnEl.textContent = '';
+}
+
+// Cập nhật dải thông tin người chơi và camera trên/dưới bàn cờ.
+// Dải DƯỚI luôn là bên đang nằm ở phía dưới bàn cờ (đổi chỗ đúng khi bấm "Lật cờ").
 export function updatePlayerStripsUI() {
     const topStrip = document.getElementById('online-player-strip-top');
     const botStrip = document.getElementById('online-player-strip-bottom');
@@ -271,36 +332,263 @@ export function updatePlayerStripsUI() {
     topStrip.style.display = 'flex';
     botStrip.style.display = 'flex';
 
-    const topNameEl = document.getElementById('online-name-top');
-    const topSideEl = document.getElementById('online-side-top');
-    const botNameEl = document.getElementById('online-name-bottom');
-    const botSideEl = document.getElementById('online-side-bottom');
-
-    if (onlineState.isSpectator) {
-        // Khán giả xem cờ: Bottom = Red, Top = Black
-        const hostIsRed = onlineState.players?.host?.color === 'red';
-        const redPlayer = hostIsRed ? onlineState.players?.host : onlineState.players?.guest;
-        const blackPlayer = hostIsRed ? onlineState.players?.guest : onlineState.players?.host;
-
-        if (topNameEl) topNameEl.textContent = blackPlayer?.userName || 'Chờ đối thủ...';
-        if (topSideEl) topSideEl.innerHTML = '<span style="color: #1e293b; font-weight: bold;">⚫ Bên Đen</span>';
-
-        if (botNameEl) botNameEl.textContent = redPlayer?.userName || 'Chờ chủ phòng...';
-        if (botSideEl) botSideEl.innerHTML = '<span style="color: #dc2626; font-weight: bold;">🔴 Bên Đỏ</span>';
-    } else {
-        // Người chơi thi đấu
-        const isMeRed = onlineState.myColor === 'red';
-        const myName = onlineState.myUserName;
-        const oppName = onlineState.opponentUserName || 'Đang chờ...';
-
-        if (botNameEl) botNameEl.textContent = `${myName} (Bạn)`;
-        if (botSideEl) botSideEl.innerHTML = isMeRed ? '<span style="color: #dc2626; font-weight: bold;">🔴 Bên Đỏ</span>' : '<span style="color: #1e293b; font-weight: bold;">⚫ Bên Đen</span>';
-
-        if (topNameEl) topNameEl.textContent = oppName;
-        if (topSideEl) topSideEl.innerHTML = isMeRed ? '<span style="color: #1e293b; font-weight: bold;">⚫ Bên Đen</span>' : '<span style="color: #dc2626; font-weight: bold;">🔴 Bên Đỏ</span>';
-    }
+    const bottomColor = state.isBoardFlipped ? 'black' : 'red';
+    const topColor = bottomColor === 'red' ? 'black' : 'red';
+    const bothSeated = onlineState.isSpectator
+        ? !!(onlineState.players && onlineState.players.host && onlineState.players.guest)
+        : !!onlineState.opponentJoined;
+    const turnColor = getTurnColor();
+    renderPlayerStrip('top', topColor, turnColor, bothSeated);
+    renderPlayerStrip('bottom', bottomColor, turnColor, bothSeated);
+    lastStripsKey = getStripsKey();
 
     updateClocksTick();
+}
+
+// Dải tên cần vẽ lại khi hướng bàn cờ hoặc lượt đi đổi (kể cả khi đổi từ chỗ khác: lật cờ, đi quân, xem lại nước cũ)
+let lastStripsKey = '';
+function getStripsKey() {
+    return `${state.isBoardFlipped}|${getTurnColor()}`;
+}
+
+// ============================================================
+// XEM LẠI NƯỚC CŨ ↔ THẾ CỜ HIỆN TẠI
+// ============================================================
+function getLiveTip() {
+    const path = getMainLine();
+    return path.length ? path[path.length - 1] : state.currentNode;
+}
+
+export function isOnlineAtLiveTip() {
+    if (!state.currentNode || !state.rootNode) return true;
+    return getLiveTip() === state.currentNode;
+}
+
+// Đưa bàn cờ về nước mới nhất (dùng khi đang xem lại nước cũ)
+export function jumpToLiveTip(silent = false) {
+    const tip = getLiveTip();
+    if (!tip || tip === state.currentNode) return;
+    instantJumpToNode(tip, silent);
+    updateLiveButton();
+}
+
+function updateLiveButton() {
+    const btn = document.getElementById('online-live-btn');
+    if (!btn) return;
+    const show = isOnlineMode() && !!onlineState.roomCode && !isOnlineAtLiveTip();
+    const display = show ? 'inline-flex' : 'none';
+    if (btn.style.display !== display) btn.style.display = display;
+}
+
+// ============================================================
+// BỐ CỤC: TAB NƯỚC ĐI / CHAT (ĐIỆN THOẠI) & KHUNG CHỦ PHÒNG THU GỌN
+// ============================================================
+function isStackedLayout() {
+    try {
+        return window.matchMedia('(max-aspect-ratio: 1/1), (orientation: landscape) and (max-height: 500px)').matches;
+    } catch (e) {
+        return false;
+    }
+}
+
+export function setOnlineInfoPane(pane) {
+    const info = document.getElementById('info-section');
+    if (!info) return;
+    const target = pane === 'chat' ? 'chat' : 'moves';
+    info.classList.toggle('online-pane-chat', target === 'chat');
+    info.classList.toggle('online-pane-moves', target === 'moves');
+    document.querySelectorAll('.online-info-tab').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.pane === target);
+    });
+    if (target === 'chat') {
+        resetChatUnread();
+        scrollChatToBottom();
+    } else {
+        import('./board.js').then(b => b.scrollToActiveMove && b.scrollToActiveMove()).catch(() => { });
+    }
+}
+
+export function toggleHostControls(forceOpen) {
+    const box = document.getElementById('online-bar-host-controls');
+    if (!box) return;
+    const collapse = forceOpen === undefined ? !box.classList.contains('collapsed') : !forceOpen;
+    box.classList.toggle('collapsed', collapse);
+}
+
+// Tab đã chọn trên điện thoại được ghi nhớ (chọn Chat 1 lần thì lần sau vào phòng vẫn mở Chat)
+const PANE_STORAGE_KEY = 'tuongky_online_pane';
+const MOVES_COLLAPSED_KEY = 'tuongky_online_moves_collapsed';
+
+function getSavedInfoPane() {
+    try { return localStorage.getItem(PANE_STORAGE_KEY); } catch (e) { return null; }
+}
+
+export function chooseOnlineInfoPane(pane) {
+    try { localStorage.setItem(PANE_STORAGE_KEY, pane); } catch (e) { }
+    setOnlineInfoPane(pane);
+}
+
+// Thu gọn / mở biên bản trên máy tính (dành chỗ cho chat). Lựa chọn được ghi nhớ.
+export function toggleOnlineMovesPanel(forceCollapsed) {
+    const collapsed = forceCollapsed !== undefined ? !!forceCollapsed : !document.body.classList.contains('online-moves-collapsed');
+    document.body.classList.toggle('online-moves-collapsed', collapsed);
+    try { localStorage.setItem(MOVES_COLLAPSED_KEY, collapsed ? '1' : '0'); } catch (e) { }
+    const btn = document.getElementById('btn-online-toggle-moves');
+    if (btn) {
+        btn.textContent = collapsed ? '▸' : '▾';
+        btn.title = collapsed ? 'Mở biên bản' : 'Thu gọn biên bản (để dành chỗ cho chat)';
+    }
+}
+
+function applySavedMovesPanelState() {
+    let saved = null;
+    try { saved = localStorage.getItem(MOVES_COLLAPSED_KEY); } catch (e) { }
+    toggleOnlineMovesPanel(saved === '1');
+}
+
+// ============================================================
+// XIN HỒI NƯỚC (đối thủ đồng ý thì cả phòng cùng lùi lại)
+// ============================================================
+export function requestOnlineUndo() {
+    if (!onlineState.roomCode) return;
+    if (onlineState.isSpectator) {
+        showToast('👁️ Khán giả không thể xin hồi nước.');
+        return;
+    }
+    if (onlineState.undoPending) {
+        showToast('⏳ Đang chờ đối thủ trả lời lời xin hồi nước...');
+        return;
+    }
+    if (!onlineState.opponentJoined || !onlineState.opponentConnected) {
+        showToast('⚠️ Đối thủ chưa vào phòng hoặc đang mất mạng.');
+        return;
+    }
+    if (!wsSend({ type: 'UNDO_REQUEST', roomCode: onlineState.roomCode })) {
+        showToast('📡 Đang mất kết nối máy chủ, thử lại sau.');
+    }
+}
+
+function respondOnlineUndo(accept) {
+    wsSend({ type: 'UNDO_RESPONSE', roomCode: onlineState.roomCode, accept: !!accept });
+    closeUndoPrompt();
+}
+
+let undoPromptTimer = null;
+
+function closeUndoPrompt() {
+    clearInterval(undoPromptTimer);
+    undoPromptTimer = null;
+    const el = document.getElementById('online-undo-prompt');
+    if (el) el.remove();
+}
+
+function showUndoPrompt(fromName, plies, timeoutSec) {
+    closeUndoPrompt();
+    const el = document.createElement('div');
+    el.id = 'online-undo-prompt';
+    el.className = 'online-undo-prompt';
+    el.setAttribute('role', 'alertdialog');
+    el.innerHTML = `
+        <div class="undo-title">↩️ Xin hồi nước</div>
+        <div class="undo-text"></div>
+        <div class="undo-actions">
+            <button type="button" class="undo-decline">Từ chối</button>
+            <button type="button" class="undo-accept">Đồng ý <span class="undo-count"></span></button>
+        </div>`;
+    el.querySelector('.undo-text').textContent = plies === 2
+        ? `${fromName} xin quay ngược thời gian (lùi 2 nước: nước của họ và nước bạn vừa đáp). Mong được duyệt quyền năng.`
+        : `${fromName} xin quay ngược thời gian. Mong được duyệt quyền năng`;
+    el.querySelector('.undo-accept').onclick = () => respondOnlineUndo(true);
+    el.querySelector('.undo-decline').onclick = () => respondOnlineUndo(false);
+    document.body.appendChild(el);
+
+    let remain = Math.max(1, Math.round(timeoutSec));
+    const countEl = el.querySelector('.undo-count');
+    countEl.textContent = `(${remain}s)`;
+    undoPromptTimer = setInterval(() => {
+        remain--;
+        if (remain <= 0) {
+            closeUndoPrompt();
+            return;
+        }
+        countEl.textContent = `(${remain}s)`;
+    }, 1000);
+}
+
+// Lùi bàn cờ đúng số nước đã hồi và xoá các nước đó khỏi biên bản (để nước đi mới không thành nhánh phụ)
+function applyUndo(plies, serverFen) {
+    jumpToLiveTip(true);
+    let node = state.currentNode;
+    for (let i = 0; i < plies && node && node.parent; i++) {
+        const parent = node.parent;
+        const idx = parent.children.indexOf(node);
+        if (idx >= 0) parent.children.splice(idx, 1);
+        parent.mainLineIndex = parent.children.length ? Math.min(parent.mainLineIndex || 0, parent.children.length - 1) : 0;
+        node = parent;
+    }
+    if (node && node !== state.currentNode) instantJumpToNode(node);
+
+    // Phòng hờ lệch thế cờ → đồng bộ lại theo máy chủ
+    if (serverFen && (!state.currentNode || !sameFenPosition(state.currentNode.fen, serverFen))) {
+        initGame(serverFen, false).then(() => {
+            if (state.currentSituation) renderBoardFull(state.currentSituation);
+            updateOnlineRoomBar();
+            updatePlayerStripsUI();
+        });
+    }
+}
+
+// ============================================================
+// POPUP TIN NHẮN (khi khung chat đang ẩn): hiện ~2 giây cạnh nút Chat rồi tự ẩn
+// ============================================================
+const CHAT_PEEK_MS = 2200;
+let chatPeekTimer = null;
+
+function hideChatPeek() {
+    clearTimeout(chatPeekTimer);
+    chatPeekTimer = null;
+    const el = document.getElementById('online-chat-peek');
+    if (el) el.classList.remove('show');
+}
+
+function showChatPeek(senderName, text) {
+    let el = document.getElementById('online-chat-peek');
+    if (!el) {
+        el = document.createElement('div');
+        el.id = 'online-chat-peek';
+        el.className = 'online-chat-peek';
+        el.innerHTML = '<div class="peek-name"></div><div class="peek-text"></div>';
+        el.addEventListener('click', () => {
+            hideChatPeek();
+            toggleChatBox(true);
+        });
+        document.body.appendChild(el);
+    }
+    const msg = String(text || '');
+    el.querySelector('.peek-name').textContent = senderName || 'Tin nhắn mới';
+    el.querySelector('.peek-text').textContent = msg.length > 120 ? msg.slice(0, 120) + '…' : msg;
+
+    // Đặt ngay trên nút Chat nếu nút đang nằm trong màn hình, nếu không thì ở giữa đáy màn hình
+    const btn = document.getElementById('btn-online-chat');
+    const r = btn ? btn.getBoundingClientRect() : null;
+    const anchored = !!(r && r.width > 0 && r.top > 80 && r.bottom <= window.innerHeight);
+    el.classList.toggle('anchored', anchored);
+    if (anchored) {
+        el.style.left = 'auto';
+        el.style.right = `${Math.max(8, Math.round(window.innerWidth - r.right))}px`;
+        el.style.bottom = `${Math.round(window.innerHeight - r.top + 10)}px`;
+    } else {
+        el.style.right = 'auto';
+        el.style.left = '50%';
+        el.style.bottom = 'calc(16px + env(safe-area-inset-bottom, 0px))';
+    }
+
+    // Khởi động lại hiệu ứng khi có tin liên tiếp
+    el.classList.remove('show');
+    void el.offsetWidth;
+    el.classList.add('show');
+    clearTimeout(chatPeekTimer);
+    chatPeekTimer = setTimeout(hideChatPeek, CHAT_PEEK_MS);
 }
 
 function getWebSocketUrl() {
@@ -341,7 +629,7 @@ export function connectOnlineSocket() {
         // Mạng di động chập chờn có thể treo ở trạng thái CONNECTING rất lâu → tự huỷ sau 10s
         const openTimeout = setTimeout(() => {
             if (!settled) {
-                try { ws.close(); } catch (e) {}
+                try { ws.close(); } catch (e) { }
             }
         }, 10000);
 
@@ -356,7 +644,7 @@ export function connectOnlineSocket() {
             if (previous && previous !== ws) {
                 previous.onclose = null;
                 previous.onmessage = null;
-                try { previous.close(); } catch (e) {}
+                try { previous.close(); } catch (e) { }
             }
 
             reconnectAttempts = 0;
@@ -469,7 +757,7 @@ function ensureSocketAlive() {
         console.warn('[Online] Socket không phản hồi, kết nối lại...');
         ws.onclose = null;
         ws.onmessage = null;
-        try { ws.close(); } catch (e) {}
+        try { ws.close(); } catch (e) { }
         onlineState.connected = false;
         updateOnlineRoomBar();
         scheduleSocketReconnect(0);
@@ -518,7 +806,7 @@ function applyRoomMembers(data) {
 
 // Đồng bộ trạng thái sau khi vào/vào lại phòng
 function onJoinedRoom() {
-    getRtcConfig().catch(() => {}); // tải trước ICE servers để kết nối voice nhanh hơn
+    getRtcConfig().catch(() => { }); // tải trước ICE servers để kết nối voice nhanh hơn
     startVoiceMonitors();
     // Báo lại trạng thái mic/cam hiện tại cho máy chủ (khôi phục sau khi rớt mạng, không hiện thông báo)
     sendVoiceStatus(onlineState.isMicActive, true);
@@ -788,7 +1076,18 @@ function handleOnlineMessage(data) {
             onlineState.timerState = data.timer;
         }
         if (data.moveCommand) {
+            // Đang xem lại nước cũ → về thế cờ mới nhất trước, nếu không nước của đối thủ bị gắn nhầm thành nhánh phụ
+            jumpToLiveTip(true);
             executeMove(data.moveCommand);
+            // Phòng hờ lệch thế cờ (hiếm) → đồng bộ lại theo máy chủ
+            if (data.fen && state.currentNode && !sameFenPosition(state.currentNode.fen, data.fen)) {
+                console.warn('[Online] Thế cờ lệch với máy chủ → đồng bộ lại');
+                initGame(data.fen, false).then(() => {
+                    if (state.currentSituation) renderBoardFull(state.currentSituation);
+                    updateOnlineRoomBar();
+                    updatePlayerStripsUI();
+                });
+            }
         }
         updateOnlineRoomBar();
         updatePlayerStripsUI();
@@ -809,6 +1108,43 @@ function handleOnlineMessage(data) {
                 updatePlayerStripsUI();
             });
         }
+        return;
+    }
+
+    // 9.2. XIN HỒI NƯỚC
+    if (type === 'UNDO_REQUESTED') {
+        showUndoPrompt(data.fromName || 'Đối thủ', data.plies || 1, data.timeoutSec || 20);
+        return;
+    }
+    if (type === 'UNDO_PENDING') {
+        onlineState.undoPending = true;
+        showToast('↩️ Đã gửi lời xin hồi nước, chờ đối thủ trả lời...');
+        updateOnlineRoomBar();
+        return;
+    }
+    if (type === 'UNDO_DECLINED') {
+        onlineState.undoPending = false;
+        notify('🙅 ' + (data.message || 'Đối thủ không đồng ý cho hồi nước.'));
+        updateOnlineRoomBar();
+        return;
+    }
+    if (type === 'UNDO_CANCELLED') {
+        onlineState.undoPending = false;
+        closeUndoPrompt();
+        if (data.message) notify('↩️ ' + data.message);
+        updateOnlineRoomBar();
+        return;
+    }
+    if (type === 'MOVE_UNDONE') {
+        onlineState.undoPending = false;
+        closeUndoPrompt();
+        onlineState.currentTurn = data.currentTurn;
+        if (data.timer) onlineState.timerState = data.timer;
+        applyUndo(data.plies || 1, data.fen);
+        notify('↩️ ' + (data.message || 'Đã hồi nước.'));
+        updateOnlineRoomBar();
+        updatePlayerStripsUI();
+        startClockTicker();
         return;
     }
 
@@ -881,6 +1217,8 @@ function handleOnlineMessage(data) {
         notify('🚪 ' + (data.message || 'Chủ phòng đã rời phòng!'));
         sessionStorage.removeItem('tuongky_active_room');
         teardownVoice();
+        closeUndoPrompt();
+        onlineState.undoPending = false;
         onlineState.roomCode = null;
         onlineState.opponentJoined = false;
         onlineState.opponentConnected = false;
@@ -952,7 +1290,7 @@ function sameFenPosition(a, b) {
 function shutdownEngineForOnline() {
     import('./engine.js').then(m => {
         if (typeof m.shutdownEngine === 'function') m.shutdownEngine();
-    }).catch(() => {});
+    }).catch(() => { });
 }
 
 // Bắt đầu vào chế độ Online Game
@@ -986,7 +1324,12 @@ async function enterOnlineGame(initialFen, myColor, rejoin = false) {
 
     updateOnlineRoomBar();
     updatePlayerStripsUI();
-    if (!rejoin) toggleChatBox(true, { focus: false });
+    if (!rejoin) {
+        // Điện thoại: mở lại tab đã chọn lần trước (mặc định kỳ thủ xem Nước đi, khán giả xem Chat); máy tính hiện cả hai
+        setOnlineInfoPane(getSavedInfoPane() || (onlineState.isSpectator ? 'chat' : 'moves'));
+        applySavedMovesPanelState();
+        toggleHostControls(!isStackedLayout());
+    }
     window.dispatchEvent(new Event('resize'));
 }
 
@@ -1226,6 +1569,9 @@ export function leaveOnlineRoom(options = {}) {
 
     teardownVoice();
     stopClockTicker();
+    closeUndoPrompt();
+    hideChatPeek();
+    onlineState.undoPending = false;
 
     onlineState.roomCode = null;
     onlineState.roomMembers = [];
@@ -1259,8 +1605,11 @@ export function updateOnlineRoomBar() {
     const bar = document.getElementById('online-room-bar');
     if (!bar) return;
 
-    if (!isOnlineMode() || !onlineState.roomCode) {
+    const inRoom = isOnlineMode() && !!onlineState.roomCode;
+    document.body.classList.toggle('online-in-room', inRoom);
+    if (!inRoom) {
         bar.style.display = 'none';
+        updateLiveButton();
         return;
     }
 
@@ -1336,42 +1685,37 @@ export function updateOnlineRoomBar() {
     // Cập nhật trạng thái nút Mic
     const btnMic = document.getElementById('btn-online-mic');
     if (btnMic) {
-        if (onlineState.isMicActive) {
-            btnMic.classList.add('active-mic');
-            btnMic.innerHTML = '🎙️ Mic: Bật';
-        } else {
-            btnMic.classList.remove('active-mic');
-            btnMic.innerHTML = '🔇 Mic: Tắt';
-        }
+        btnMic.classList.toggle('active-mic', onlineState.isMicActive);
+        setToolButton(btnMic, onlineState.isMicActive ? '🎙️' : '🔇', onlineState.isMicActive ? 'Mic bật' : 'Mic tắt');
     }
 
     // Cập nhật trạng thái nút Loa
     const btnSpeaker = document.getElementById('btn-online-speaker');
     if (btnSpeaker) {
-        btnSpeaker.innerHTML = onlineState.isSpeakerMuted ? '🔈 Loa: Tắt' : '🔊 Loa';
         btnSpeaker.classList.toggle('speaker-muted', onlineState.isSpeakerMuted);
+        setToolButton(btnSpeaker, onlineState.isSpeakerMuted ? '🔈' : '🔊', onlineState.isSpeakerMuted ? 'Loa tắt' : 'Loa');
     }
 
     // Cập nhật trạng thái nút Cam
     const btnCam = document.getElementById('btn-online-cam');
     if (btnCam) {
+        btnCam.classList.toggle('tool-locked', onlineState.isSpectator);
+        btnCam.classList.toggle('active-cam', !onlineState.isSpectator && onlineState.isCameraActive);
         if (onlineState.isSpectator) {
-            btnCam.style.opacity = '0.5';
-            btnCam.style.cursor = 'not-allowed';
             btnCam.title = 'Khán giả không được bật camera!';
-            btnCam.innerHTML = '📷 Cam: Khóa';
+            setToolButton(btnCam, '📷', 'Cam khoá');
         } else {
-            btnCam.style.opacity = '1';
-            btnCam.style.cursor = 'pointer';
-            btnCam.title = 'Bật/Tắt Camera WebRTC';
-            if (onlineState.isCameraActive) {
-                btnCam.classList.add('active-cam');
-                btnCam.innerHTML = '📹 Cam: Bật';
-            } else {
-                btnCam.classList.remove('active-cam');
-                btnCam.innerHTML = '📹 Cam: Tắt';
-            }
+            btnCam.title = 'Bật/Tắt Camera (chỉ 2 người đấu)';
+            setToolButton(btnCam, onlineState.isCameraActive ? '📹' : '📷', onlineState.isCameraActive ? 'Cam bật' : 'Cam tắt');
         }
+    }
+
+    // Nút xin hồi nước: chỉ dành cho kỳ thủ
+    const btnUndo = document.getElementById('btn-online-undo');
+    if (btnUndo) {
+        btnUndo.classList.toggle('tool-hidden', onlineState.isSpectator);
+        btnUndo.classList.toggle('tool-locked', !!onlineState.undoPending);
+        setToolButton(btnUndo, onlineState.undoPending ? '⏳' : '↩️', onlineState.undoPending ? 'Đang chờ' : 'Hồi nước');
     }
 
     // Cập nhật badge số người xem
@@ -1379,6 +1723,18 @@ export function updateOnlineRoomBar() {
     if (specCountEl) {
         specCountEl.textContent = onlineState.spectatorCount || 0;
     }
+
+    updateChatBadges();
+    updateLiveButton();
+    updatePlayerStripsUI();
+}
+
+// Đổi icon + nhãn của nút công cụ (giữ nguyên các phần tử con khác như badge)
+function setToolButton(btn, icon, label) {
+    const ico = btn.querySelector('.tool-ico');
+    const lbl = btn.querySelector('.tool-lbl');
+    if (ico && ico.textContent !== icon) ico.textContent = icon;
+    if (lbl && lbl.textContent !== label) lbl.textContent = label;
 }
 
 // ============================================================
@@ -1386,26 +1742,59 @@ export function updateOnlineRoomBar() {
 // ============================================================
 const MAX_CHAT_MESSAGES = 150; // giới hạn số tin giữ trên màn hình để không phình DOM/RAM khi chơi lâu
 
+// Nút "Chat" / nút ✕ của khung chat.
+// - Điện thoại / máy tính bảng: chuyển giữa tab Chat và tab Nước đi.
+// - Máy tính: khung chat luôn hiện, nút ✕ chỉ thu gọn để nhường chỗ cho biên bản.
 export function toggleChatBox(forceOpen, options = {}) {
     const chatBox = document.getElementById('online-chat-box');
     if (!chatBox) return;
 
-    const shouldShow = forceOpen !== undefined ? forceOpen : (chatBox.style.display === 'none');
-    chatBox.style.display = shouldShow ? 'flex' : 'none';
-
-    if (shouldShow) {
-        onlineState.unreadChatCount = 0;
-        const badge = document.getElementById('online-chat-badge');
-        if (badge) {
-            badge.style.display = 'none';
-            badge.textContent = '0';
+    if (isOnlineMode() && isStackedLayout()) {
+        const open = forceOpen !== undefined ? forceOpen : true;
+        setOnlineInfoPane(open ? 'chat' : 'moves');
+        if (open && options.scroll !== false) {
+            const tabs = document.getElementById('online-info-tabs');
+            (tabs || chatBox).scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
+        return;
+    }
+
+    chatBox.style.display = 'flex';
+    const collapsed = chatBox.classList.contains('chat-collapsed');
+    const open = forceOpen !== undefined ? forceOpen : collapsed;
+    chatBox.classList.toggle('chat-collapsed', !open);
+    document.body.classList.toggle('online-chat-collapsed', !open);
+
+    if (open) {
+        resetChatUnread();
         // Không tự bật bàn phím trên điện thoại (che mất bàn cờ); chỉ focus khi người dùng chủ động mở chat trên máy tính
         const wantFocus = options.focus !== false && !isTouchDevice();
         const input = document.getElementById('online-chat-input');
         if (input && wantFocus) setTimeout(() => input.focus(), 50);
         scrollChatToBottom();
     }
+}
+
+function isChatPaneVisible() {
+    const chatBox = document.getElementById('online-chat-box');
+    if (!chatBox || chatBox.classList.contains('chat-collapsed')) return false;
+    return chatBox.getClientRects().length > 0;
+}
+
+function resetChatUnread() {
+    onlineState.unreadChatCount = 0;
+    updateChatBadges();
+}
+
+function updateChatBadges() {
+    const count = onlineState.unreadChatCount || 0;
+    const text = count > 9 ? '9+' : String(count);
+    ['online-chat-badge', 'online-chat-tab-badge'].forEach(id => {
+        const badge = document.getElementById(id);
+        if (!badge) return;
+        badge.style.display = count > 0 ? 'inline-block' : 'none';
+        badge.textContent = text;
+    });
 }
 
 export function sendOnlineChat(text) {
@@ -1448,16 +1837,11 @@ function appendChatMessage(data) {
 
     scrollChatToBottom();
 
-    // Nếu hộp chat đang đóng và người gửi không phải mình -> hiển thị badge số tin chưa đọc
-    const chatBox = document.getElementById('online-chat-box');
-    if (!isMine && (!chatBox || chatBox.style.display === 'none')) {
+    // Khung chat đang bị ẩn/thu gọn và người gửi không phải mình -> hiển thị badge số tin chưa đọc
+    if (!isMine && data.senderRole !== 'system' && !isChatPaneVisible()) {
         onlineState.unreadChatCount++;
-        const badge = document.getElementById('online-chat-badge');
-        if (badge) {
-            badge.style.display = 'inline-block';
-            badge.textContent = onlineState.unreadChatCount > 9 ? '9+' : onlineState.unreadChatCount;
-        }
-        notify(`💬 ${data.senderName}: ${String(data.text || '').slice(0, 35)}...`);
+        updateChatBadges();
+        showChatPeek(data.senderName, data.text);
     }
 }
 
@@ -1699,7 +2083,7 @@ function closePeer(uid) {
         peer.pc.onconnectionstatechange = null;
         peer.pc.oniceconnectionstatechange = null;
         peer.pc.close();
-    } catch (e) {}
+    } catch (e) { }
     if (peer.audioEl) {
         peer.audioEl.srcObject = null;
         peer.audioEl.remove();
@@ -1744,7 +2128,7 @@ function bindTransceivers(peer) {
     if (!peer.videoTx) peer.videoTx = transceivers.find(t => t.receiver && t.receiver.track && t.receiver.track.kind === 'video') || null;
     [peer.audioTx, peer.videoTx].forEach(t => {
         if (t && t.direction !== 'sendrecv' && t.direction !== 'stopped') {
-            try { t.direction = 'sendrecv'; } catch (e) {}
+            try { t.direction = 'sendrecv'; } catch (e) { }
         }
     });
 }
@@ -1756,7 +2140,7 @@ async function setSenderEncoding(sender, encoding) {
         if (!params.encodings || params.encodings.length === 0) return;
         Object.assign(params.encodings[0], encoding);
         await sender.setParameters(params);
-    } catch (e) {}
+    } catch (e) { }
 }
 
 // Ưu tiên gói tin giọng nói + giới hạn bitrate camera (chạy 1 lần khi kết nối thành công)
@@ -1832,7 +2216,7 @@ function refreshRemoteVideo() {
         if (current !== track) {
             remoteVideo.muted = true;
             remoteVideo.srcObject = new MediaStream([track]);
-            remoteVideo.play().catch(() => {});
+            remoteVideo.play().catch(() => { });
         }
         remoteVideo.style.display = 'block';
         if (placeholder) placeholder.style.display = 'none';
@@ -1953,7 +2337,7 @@ async function sendOffer(peer, iceRestart = false) {
     if (peer.closed) return;
     if (pc.signalingState === 'have-local-offer') {
         // Offer trước chưa được trả lời (có thể đã thất lạc) → huỷ để tạo offer mới
-        try { await pc.setLocalDescription({ type: 'rollback' }); } catch (e) {}
+        try { await pc.setLocalDescription({ type: 'rollback' }); } catch (e) { }
     }
     if (pc.signalingState !== 'stable') return;
     const offer = await pc.createOffer(iceRestart ? { iceRestart: true } : {});
@@ -2038,7 +2422,7 @@ async function handleRtcOffer(uid, data) {
 
     const pc = peer.pc;
     if (pc.signalingState !== 'stable') {
-        try { await pc.setLocalDescription({ type: 'rollback' }); } catch (e) {}
+        try { await pc.setLocalDescription({ type: 'rollback' }); } catch (e) { }
     }
     await pc.setRemoteDescription({ type: 'offer', sdp: tuneOpusSdp(data.offer.sdp) });
     if (peer.closed) return;
@@ -2087,7 +2471,7 @@ async function handleRtcIce(uid, data) {
     }
     try {
         await peer.pc.addIceCandidate(data.candidate);
-    } catch (e) {}
+    } catch (e) { }
 }
 
 async function flushPendingCandidates(peer) {
@@ -2097,7 +2481,7 @@ async function flushPendingCandidates(peer) {
         if (item.pcId !== peer.remotePcId) continue;
         try {
             await peer.pc.addIceCandidate(item.candidate);
-        } catch (e) {}
+        } catch (e) { }
     }
 }
 
@@ -2188,8 +2572,16 @@ function startVoiceMonitors() {
         }, VOICE_HEALTH_INTERVAL_MS);
     }
     if (!speakingTimer) {
-        speakingTimer = setInterval(updateSpeakingIndicators, 300);
+        speakingTimer = setInterval(onlineUiTick, 300);
     }
+}
+
+// Vòng cập nhật giao diện nhẹ (300ms): đèn đang nói, nút "về thế cờ hiện tại", dải tên khi lật cờ
+function onlineUiTick() {
+    if (document.hidden || !isInRoom()) return;
+    updateSpeakingIndicators();
+    updateLiveButton();
+    if (lastStripsKey !== getStripsKey()) updatePlayerStripsUI();
 }
 
 function stopVoiceMonitors() {
@@ -2258,7 +2650,7 @@ async function ensureMicStream() {
     });
     const track = stream.getAudioTracks()[0];
     if (track) {
-        try { track.contentHint = 'speech'; } catch (e) {}
+        try { track.contentHint = 'speech'; } catch (e) { }
         // Micro bị ngắt từ ngoài (rút tai nghe, hệ điều hành thu hồi quyền...)
         track.onended = () => {
             if (onlineState.localStream !== stream) return;
@@ -2386,7 +2778,7 @@ async function startOnlineCamera() {
         localVideo.srcObject = stream;
         localVideo.style.display = 'block';
         if (localPlaceholder) localPlaceholder.style.display = 'none';
-        localVideo.play().catch(() => {});
+        localVideo.play().catch(() => { });
     }
 
     // Camera chỉ gửi tới đối thủ (host ↔ guest), không gửi tới khán giả
@@ -2470,7 +2862,13 @@ function handleVoiceStatus(data) {
         const fromName = data.fromUserName || data.fromRole || 'Ai đó';
         notify(data.isMicActive ? `🎙️ ${fromName} đã bật Microphone.` : `🔇 ${fromName} đã tắt Microphone.`);
     }
+    // Khán giả xem trạng thái mic của kỳ thủ qua onlineState.players
+    const players = onlineState.players || {};
+    [players.host, players.guest].forEach(p => {
+        if (p && p.userId === fromUserId) p.micOn = !!data.isMicActive;
+    });
     scheduleVoiceUIUpdate();
+    updatePlayerStripsUI();
 }
 
 // ============================
@@ -2555,8 +2953,7 @@ function renderVoicePanel() {
 function updateSpeakingIndicators() {
     if (document.hidden || !isInRoom()) return;
     const list = document.getElementById('voice-participants-list');
-    const panel = document.getElementById('voice-participants-panel');
-    if (!list || !panel || panel.style.display === 'none') return;
+    const strips = [document.getElementById('online-player-strip-top'), document.getElementById('online-player-strip-bottom')];
 
     const nowWall = performance.timeOrigin + performance.now();
     const nowPerf = performance.now();
@@ -2572,11 +2969,17 @@ function updateSpeakingIndicators() {
         }
         if (speaking !== peer.speaking) {
             peer.speaking = speaking;
-            const chip = list.querySelector(`[data-uid="${CSS.escape(peer.uid)}"]`);
+            const chip = list ? list.querySelector(`[data-uid="${CSS.escape(peer.uid)}"]`) : null;
             if (chip) chip.classList.toggle('speaking', speaking);
             lastVoicePanelHtml = ''; // để lần render sau không ghi đè trạng thái đang nói
         }
     }
+    // Viền sáng trên dải tên của kỳ thủ đang nói
+    strips.forEach(strip => {
+        if (!strip) return;
+        const peer = strip.dataset.uid ? onlineState.peerConnections.get(strip.dataset.uid) : null;
+        strip.classList.toggle('speaking', !!(peer && peer.speaking));
+    });
 }
 
 // Kiểm tra và khôi phục phòng nếu người chơi tải lại trang (F5)

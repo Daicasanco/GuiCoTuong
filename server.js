@@ -670,6 +670,45 @@ setInterval(() => {
     });
 }, 30000);
 
+// ========================================================
+// XIN HỒI NƯỚC (UNDO)
+// Mỗi nước đi lưu thế cờ trước/sau → chỉ hồi được khi lịch sử khớp thế cờ hiện tại
+// (tự vô hiệu sau khi chủ phòng xếp lại bàn, đổi lượt, ván mới...).
+// ========================================================
+const UNDO_REQUEST_TIMEOUT_MS = 20000;
+const UNDO_DECLINE_COOLDOWN_MS = 10000;
+const MAX_MOVE_HISTORY = 400;
+
+function recordMoveHistory(room, fenBefore, turnBefore, fenAfter, moveCommand) {
+    if (!room.moveHistory) room.moveHistory = [];
+    room.moveHistory.push({ fenBefore, turnBefore, fenAfter, moveCommand });
+    if (room.moveHistory.length > MAX_MOVE_HISTORY) room.moveHistory.shift();
+}
+
+// Số nước cần hồi để người xin quay lại đúng lượt của mình (1 nếu vừa đi, 2 nếu đối thủ đã đáp lại)
+function getUndoPlan(room, player) {
+    const hist = room.moveHistory || [];
+    const myTurn = player.color === 'red' ? 'w' : 'b';
+    const plies = room.currentTurn === myTurn ? 2 : 1;
+    if (hist.length < plies) return null;
+    const last = hist[hist.length - 1];
+    if (last.fenAfter !== room.fen) return null; // lịch sử đã cũ (bàn cờ bị đổi bằng cách khác)
+    if (plies === 2 && hist[hist.length - 2].fenAfter !== last.fenBefore) return null;
+    const target = hist[hist.length - plies];
+    if (target.turnBefore !== myTurn) return null; // nước cần hồi không phải của người xin
+    return { plies, historyLen: hist.length };
+}
+
+function cancelUndoRequest(room, message) {
+    const req = room && room.undoRequest;
+    if (!req) return;
+    clearTimeout(req.timer);
+    room.undoRequest = null;
+    [room.host, room.guest].forEach((p) => {
+        if (p) sendJson(p.ws, { type: 'UNDO_CANCELLED', message: message || 'Lời xin hồi nước đã bị huỷ.' });
+    });
+}
+
 // Tên kỳ thủ cầm 1 màu (an toàn khi chủ phòng/khách đang trống)
 function getPlayerNameByColor(room, color) {
     if (room.host && room.host.color === color) return room.host.userName;
@@ -863,6 +902,11 @@ function handleSocketMessage(ws, messageRaw) {
     const room = rooms.get(roomCode);
     if (!room) return;
 
+    // Bàn cờ sắp thay đổi → huỷ lời xin hồi nước đang chờ
+    if (room.undoRequest && ['MOVE', 'RESET_GAME', 'HOST_UPDATE_BOARD', 'HOST_SET_TURN', 'HOST_SWAP_SIDES', 'SUBSTITUTE_GUEST', 'LEAVE_ROOM'].includes(type)) {
+        cancelUndoRequest(room, type === 'MOVE' ? 'Lời xin hồi nước đã huỷ vì có nước đi mới.' : 'Lời xin hồi nước đã huỷ vì bàn cờ thay đổi.');
+    }
+
     // 3. ĐI QUÂN (MOVE) - CHỈ CHỦ HOẶC KHÁCH MỚI ĐƯỢC PHÉP ĐI QUÂN
     if (type === 'MOVE') {
         if (ws.isSpectator) {
@@ -891,9 +935,11 @@ function handleSocketMessage(ws, messageRaw) {
             });
         }
 
+        const fenBefore = room.fen;
         room.fen = newFen;
         const nextTurn = data.nextTurn === 'b' || data.nextTurn === 'w' ? data.nextTurn : (room.fen.split(' ')[1] || 'w');
         room.currentTurn = nextTurn;
+        recordMoveHistory(room, fenBefore, prevTurn, room.fen, typeof data.moveCommand === 'string' ? data.moveCommand.slice(0, 8) : null);
 
         // XỬ LÝ ĐỒNG HỒ TÍNH GIỜ KHI ĐI NƯỚC CỜ
         if (room.timer && room.timer.enabled) {
@@ -1203,6 +1249,90 @@ function handleSocketMessage(ws, messageRaw) {
             currentTurn: room.currentTurn,
             timer: room.timer,
             message: 'Chủ phòng đã khởi tạo ván cờ mới!'
+        });
+        return;
+    }
+
+    // 7.1. XIN HỒI NƯỚC (KỲ THỦ XIN ĐI LẠI NƯỚC VỪA RỒI, ĐỐI THỦ QUYẾT ĐỊNH)
+    if (type === 'UNDO_REQUEST') {
+        const me = (room.host && room.host.ws === ws) ? room.host : ((room.guest && room.guest.ws === ws) ? room.guest : null);
+        if (!me) return sendJson(ws, { type: 'ERROR', message: 'Chỉ kỳ thủ đang đấu mới được xin hồi nước.' });
+        const opp = me === room.host ? room.guest : room.host;
+        if (!opp || opp.connected === false || !opp.ws || opp.ws.readyState !== 1) {
+            return sendJson(ws, { type: 'UNDO_DECLINED', message: 'Đối thủ chưa vào phòng hoặc đang mất mạng.' });
+        }
+        if (room.undoRequest) return sendJson(ws, { type: 'UNDO_DECLINED', message: 'Đang có một lời xin hồi nước chờ trả lời.' });
+        if (me.undoCooldownUntil && me.undoCooldownUntil > Date.now()) {
+            return sendJson(ws, { type: 'UNDO_DECLINED', message: 'Vui lòng chờ vài giây rồi hãy xin lại.' });
+        }
+        const plan = getUndoPlan(room, me);
+        if (!plan) return sendJson(ws, { type: 'UNDO_DECLINED', message: 'Chưa có nước nào của bạn để hồi.' });
+
+        room.undoRequest = {
+            fromUserId: me.userId,
+            plies: plan.plies,
+            historyLen: plan.historyLen,
+            timer: setTimeout(() => {
+                if (!room.undoRequest || room.undoRequest.fromUserId !== me.userId) return;
+                room.undoRequest = null;
+                me.undoCooldownUntil = Date.now() + UNDO_DECLINE_COOLDOWN_MS;
+                sendJson(me.ws, { type: 'UNDO_DECLINED', message: 'Đối thủ không trả lời lời xin hồi nước.' });
+                sendJson(opp.ws, { type: 'UNDO_CANCELLED', message: 'Đã hết thời gian trả lời lời xin hồi nước.' });
+            }, UNDO_REQUEST_TIMEOUT_MS)
+        };
+        sendJson(opp.ws, { type: 'UNDO_REQUESTED', fromName: me.userName, plies: plan.plies, timeoutSec: UNDO_REQUEST_TIMEOUT_MS / 1000 });
+        sendJson(ws, { type: 'UNDO_PENDING', plies: plan.plies, timeoutSec: UNDO_REQUEST_TIMEOUT_MS / 1000 });
+        return;
+    }
+
+    if (type === 'UNDO_RESPONSE') {
+        const req = room.undoRequest;
+        const me = (room.host && room.host.ws === ws) ? room.host : ((room.guest && room.guest.ws === ws) ? room.guest : null);
+        if (!req || !me || me.userId === req.fromUserId) return;
+        const requester = [room.host, room.guest].find(p => p && p.userId === req.fromUserId);
+        clearTimeout(req.timer);
+        room.undoRequest = null;
+        if (!requester) return;
+
+        const plan = getUndoPlan(room, requester);
+        if (!data.accept || !plan || plan.plies !== req.plies || plan.historyLen !== req.historyLen) {
+            requester.undoCooldownUntil = Date.now() + UNDO_DECLINE_COOLDOWN_MS;
+            sendJson(requester.ws, { type: 'UNDO_DECLINED', message: data.accept ? 'Không thể hồi nước vì bàn cờ đã thay đổi.' : `${me.userName} không đồng ý cho hồi nước.` });
+            sendJson(ws, { type: 'UNDO_CANCELLED' });
+            return;
+        }
+
+        const removed = room.moveHistory.splice(room.moveHistory.length - req.plies, req.plies);
+        room.fen = removed[0].fenBefore;
+        room.currentTurn = removed[0].turnBefore;
+
+        // Đồng hồ: tính giờ lại cho bên được đi tiếp
+        if (room.timer && room.timer.enabled) {
+            if (room.timer.mode === 'per_move') {
+                if (room.currentTurn === 'w') room.timer.redTimeMs = room.timer.moveLimitSeconds * 1000;
+                else room.timer.blackTimeMs = room.timer.moveLimitSeconds * 1000;
+            }
+            if (room.timer.isRunning) {
+                room.timer.activeSide = room.currentTurn;
+                room.timer.lastTick = Date.now();
+            }
+        }
+
+        console.log(`↩️ [Online] Phòng [${roomCode}]: ${me.userName} đồng ý cho ${requester.userName} hồi ${req.plies} nước`);
+        broadcastToRoom(room, {
+            type: 'MOVE_UNDONE',
+            plies: req.plies,
+            fen: room.fen,
+            currentTurn: room.currentTurn,
+            timer: room.timer,
+            message: `${me.userName} đã đồng ý cho ${requester.userName} hồi nước.`
+        });
+        broadcastToRoom(room, {
+            type: 'CHAT_MESSAGE',
+            senderRole: 'system',
+            senderName: 'Hệ thống',
+            text: `↩️ ${requester.userName} đã được hồi nước (${req.plies === 2 ? '2 nước' : '1 nước'}).`,
+            time: getVietnamTimeString()
         });
         return;
     }
@@ -1610,6 +1740,11 @@ function handleClientNetworkDrop(ws) {
             broadcastPlayersUpdated(room);
         }
         return;
+    }
+
+    // Kỳ thủ rớt mạng → huỷ lời xin hồi nước đang chờ
+    if (!ws.isSpectator && ((room.host && room.host.ws === ws) || (room.guest && room.guest.ws === ws))) {
+        cancelUndoRequest(room, 'Lời xin hồi nước đã huỷ vì có người mất kết nối.');
     }
 
     // B) CHỦ PHÒNG RỚT MẠNG

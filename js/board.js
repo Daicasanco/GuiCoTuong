@@ -1370,9 +1370,15 @@ export function renderMoveHistory() {
         const btn = document.createElement('button');
         
         if (i === 0) {
-            btn.className = 'move-box header-box'; 
+            btn.className = 'move-box header-box';
             btn.innerText = "Nước Đi";
         } else {
+            // Ván bắt đầu bằng lượt Đen: chèn ô trống để biên bản dạng cặp "Đỏ | Đen" (chế độ online) không bị lệch cột
+            if (i === 1 && isRootBlack) {
+                const spacer = document.createElement('div');
+                spacer.className = 'move-spacer';
+                container.appendChild(spacer);
+            }
             btn.className = 'move-box';
             if (i > state.currentStepNum) btn.classList.add('move-future');
             

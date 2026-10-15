@@ -12,7 +12,7 @@ import { uploadLocalBook, deleteLocalBook, loadLocalBookFromDB } from './localbo
 import { renderEvalGraph } from './analysis/eval-graph.js';
 import { runAutoGameReview } from './analysis/auto-review.js';
 import { runAIAnnotation } from './analysis/ai-annotate.js';
-import { createOnlineRoom, joinOnlineRoom, leaveOnlineRoom, sendHostSetTurn, sendHostSwapSides, sendResetGame, updateOnlineRoomBar, onlineState, toggleOnlineVoiceMic, sendOnlineChat, toggleChatBox, getOnlineUserName, setOnlineUserName, toggleOnlineCamera, sendTimerSettings, renderSpectatorsModalList, substituteGuest, toggleOnlineSpeaker, unlockRemoteAudio } from './online.js';
+import { createOnlineRoom, joinOnlineRoom, leaveOnlineRoom, sendHostSetTurn, sendHostSwapSides, sendResetGame, updateOnlineRoomBar, onlineState, toggleOnlineVoiceMic, sendOnlineChat, toggleChatBox, getOnlineUserName, setOnlineUserName, toggleOnlineCamera, sendTimerSettings, renderSpectatorsModalList, substituteGuest, toggleOnlineSpeaker, unlockRemoteAudio, jumpToLiveTip, chooseOnlineInfoPane, toggleHostControls, toggleOnlineMovesPanel, requestOnlineUndo } from './online.js';
 
 let pendingDeletePuzKey = "";
 
@@ -3108,6 +3108,40 @@ function initOnlineEvents() {
         btnVoiceUnlock.onclick = () => {
             unlockRemoteAudio();
         };
+    }
+
+    // 7.0.3 Nút "Về thế cờ hiện tại" khi đang xem lại nước cũ
+    const btnOnlineLive = document.getElementById('online-live-btn');
+    if (btnOnlineLive) {
+        btnOnlineLive.onclick = () => {
+            jumpToLiveTip();
+        };
+    }
+
+    // 7.0.4 Tab Nước đi / Chat (điện thoại & máy tính bảng) — lựa chọn được ghi nhớ
+    document.querySelectorAll('.online-info-tab').forEach(tab => {
+        tab.onclick = () => chooseOnlineInfoPane(tab.dataset.pane);
+    });
+
+    // 7.0.6 Thu gọn / mở biên bản (máy tính)
+    const btnToggleMoves = document.getElementById('btn-online-toggle-moves');
+    if (btnToggleMoves) {
+        btnToggleMoves.onclick = (e) => {
+            e.stopPropagation();
+            toggleOnlineMovesPanel();
+        };
+    }
+
+    // 7.0.7 Xin hồi nước
+    const btnOnlineUndo = document.getElementById('btn-online-undo');
+    if (btnOnlineUndo) {
+        btnOnlineUndo.onclick = () => requestOnlineUndo();
+    }
+
+    // 7.0.5 Mở / thu gọn công cụ chủ phòng
+    const btnToggleHost = document.getElementById('btn-toggle-host-controls');
+    if (btnToggleHost) {
+        btnToggleHost.onclick = () => toggleHostControls();
     }
 
     // 7.1 Bật / Tắt Camera WebRTC

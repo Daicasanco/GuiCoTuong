@@ -252,23 +252,28 @@
                         👉 TỚI LƯỢT BẠN
                     </div>
                     <div class="online-tools-group">
-                        <button class="btn-online-tool" id="btn-online-mic" title="Bật/Tắt Microphone (tắt mic vẫn nghe được mọi người)">🔇 Mic:
-                            Tắt</button>
-                        <button class="btn-online-tool" id="btn-online-speaker" title="Bật/Tắt loa (nghe voice của mọi người)">🔊 Loa</button>
-                        <button class="btn-online-tool" id="btn-online-cam" title="Bật/Tắt Camera (Chỉ 2 người đấu)">📹
-                            Cam: Tắt</button>
-                        <button class="btn-online-tool" id="btn-online-spectators" title="Danh sách người xem">👁️ <span
-                                id="online-spectator-count">0</span></button>
-                        <button class="btn-online-tool" id="btn-online-flip" title="Lật góc nhìn bàn cờ">🔄 Lật
-                            cờ</button>
-                        <button class="btn-online-tool" id="btn-online-chat" title="Mở hộp tin nhắn trò chuyện">💬 Chat
-                            <span id="online-chat-badge" class="chat-badge" style="display: none;">0</span></button>
+                        <button class="btn-online-tool" id="btn-online-mic" title="Bật/Tắt Microphone (tắt mic vẫn nghe được mọi người)"><span
+                                class="tool-ico">🔇</span><span class="tool-lbl">Mic tắt</span></button>
+                        <button class="btn-online-tool" id="btn-online-speaker" title="Bật/Tắt loa (nghe voice của mọi người)"><span
+                                class="tool-ico">🔊</span><span class="tool-lbl">Loa</span></button>
+                        <button class="btn-online-tool" id="btn-online-cam" title="Bật/Tắt Camera (Chỉ 2 người đấu)"><span
+                                class="tool-ico">📷</span><span class="tool-lbl">Cam tắt</span></button>
+                        <button class="btn-online-tool" id="btn-online-undo" title="Xin đối thủ cho đi lại nước vừa rồi"><span
+                                class="tool-ico">↩️</span><span class="tool-lbl">Hồi nước</span></button>
+                        <button class="btn-online-tool" id="btn-online-spectators" title="Danh sách người trong phòng"><span
+                                class="tool-ico">👁️</span><span class="tool-lbl"><span id="online-spectator-count">0</span> xem</span></button>
+                        <button class="btn-online-tool" id="btn-online-flip" title="Lật góc nhìn bàn cờ"><span
+                                class="tool-ico">🔄</span><span class="tool-lbl">Lật cờ</span></button>
+                        <button class="btn-online-tool" id="btn-online-chat" title="Mở hộp tin nhắn trò chuyện"><span
+                                class="tool-ico">💬</span><span class="tool-lbl">Chat</span><span id="online-chat-badge"
+                                class="chat-badge" style="display: none;">0</span></button>
                     </div>
                 </div>
 
                 <!-- HÀNG 3: QUYỀN CHỦ PHÒNG (NẾU LÀ CHỦ PHÒNG) -->
-                <div id="online-bar-host-controls" class="online-bar-host-row" style="display: none;">
-                    <div class="online-host-title">👑 Quyền Chủ Phòng</div>
+                <div id="online-bar-host-controls" class="online-bar-host-row collapsed" style="display: none;">
+                    <button type="button" class="online-host-title" id="btn-toggle-host-controls"
+                        title="Mở/Thu gọn công cụ chủ phòng">👑 Quyền Chủ Phòng <span class="host-chevron">▾</span></button>
                     <div class="online-host-buttons">
                         <button class="btn-host-action" id="btn-online-timer-setup" title="Cài đặt đồng hồ tính giờ">⏱️
                             Đồng Hồ</button>
@@ -311,11 +316,15 @@
                                 <div id="cam-top-placeholder" class="cam-placeholder">👤</div>
                             </div>
                             <div class="online-strip-info">
-                                <div id="online-name-top" class="online-strip-name">Đối thủ</div>
+                                <div class="online-strip-name-row">
+                                    <span id="online-name-top" class="online-strip-name">Đối thủ</span>
+                                    <span id="online-mic-top" class="online-strip-mic"></span>
+                                </div>
                                 <div id="online-side-top" class="online-strip-side">⚫ Bên Đen</div>
                             </div>
                         </div>
                         <div class="online-strip-right">
+                            <span id="online-turn-top" class="online-strip-turn"></span>
                             <div id="online-clock-top" class="online-digital-clock" title="Thời gian còn lại">--:--
                             </div>
                         </div>
@@ -324,6 +333,8 @@
                     <div id="chess-board-area">
                         <div id="ai-thinking-spinner" style="display: none;"></div>
                         <canvas id="chess-canvas"></canvas>
+                        <button type="button" id="online-live-btn" class="online-live-btn" style="display: none;"
+                            title="Bạn đang xem lại nước cũ">⏩ Đang xem lại · Về thế cờ hiện tại</button>
                     </div>
 
                     <!-- DẢI THÔNG TIN & CAMERA BÊN DƯỚI (BẢN THÂN / PHÍA DƯỚI) - CHỈ HIỆN KHI ĐÁNH ONLINE -->
@@ -334,11 +345,15 @@
                                 <div id="cam-bottom-placeholder" class="cam-placeholder">📷</div>
                             </div>
                             <div class="online-strip-info">
-                                <div id="online-name-bottom" class="online-strip-name">Bạn</div>
+                                <div class="online-strip-name-row">
+                                    <span id="online-name-bottom" class="online-strip-name">Bạn</span>
+                                    <span id="online-mic-bottom" class="online-strip-mic"></span>
+                                </div>
                                 <div id="online-side-bottom" class="online-strip-side">🔴 Bên Đỏ</div>
                             </div>
                         </div>
                         <div class="online-strip-right">
+                            <span id="online-turn-bottom" class="online-strip-turn"></span>
                             <div id="online-clock-bottom" class="online-digital-clock" title="Thời gian còn lại">--:--
                             </div>
                         </div>
@@ -557,6 +572,13 @@
                     </div>
                 </div>
 
+                <!-- TAB CHUYỂN NƯỚC ĐI / CHAT (CHỈ HIỆN TRÊN ĐIỆN THOẠI & MÁY TÍNH BẢNG KHI ĐÁNH ONLINE) -->
+                <div id="online-info-tabs" class="online-info-tabs">
+                    <button type="button" class="online-info-tab active" data-pane="moves">📜 Nước đi</button>
+                    <button type="button" class="online-info-tab" data-pane="chat">💬 Chat <span
+                            id="online-chat-tab-badge" class="chat-badge" style="display: none;">0</span></button>
+                </div>
+
                 <!-- HỘP THOẠI TRÒ CHUYỆN ONLINE (NẰM TRÊN BIÊN BẢN KHI ĐÁNH ONLINE) -->
                 <div id="online-chat-box" style="display: none;">
                     <div class="online-chat-header">
@@ -589,6 +611,8 @@
                             <button class="lower-tab-btn ai-tab-btn" data-tab="cloudbook">Cloud Book</button>
                             <button class="lower-tab-btn ai-tab-btn" data-tab="library">Thư Viện Cờ</button>
                             <button class="lower-tab-btn ai-tab-btn" data-tab="comment">Ghi Chú</button>
+                            <button type="button" id="btn-online-toggle-moves" class="online-moves-toggle"
+                                title="Thu gọn / mở biên bản (để dành chỗ cho chat)">▾</button>
                         </div>
 
                         <!-- TAB BIÊN BẢN -->

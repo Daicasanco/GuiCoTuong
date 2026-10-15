@@ -9,7 +9,7 @@ import { initPikafish, triggerEngineEvaluation, botProfiles } from './engine.js'
 import { handleEditSquareClick } from './editor.js';
 import { formatGameInfoString, mergeGameInfo, saveGameState } from './io.js';
 import { checkDraw60Moves, getStrictLegalMoves } from './rules.js';
-import { isOnlineMode, isMyOnlineTurn, getMyOnlineColor, sendOnlineMove, updateOnlineRoomBar, onlineState, isOnlineSocketReady } from './online.js';
+import { isOnlineMode, isMyOnlineTurn, getMyOnlineColor, sendOnlineMove, updateOnlineRoomBar, onlineState, isOnlineSocketReady, isOnlineAtLiveTip, jumpToLiveTip } from './online.js';
 
 import { playAudio } from './audio.js';
 
@@ -280,7 +280,10 @@ export function applyAutoBoardFlip() {
     } else if (state.appMode === 'puzzle') {
         // GIẢI BÀI TẬP: Lật bàn nếu người chơi (đi trước) cầm quân Đen
         const isRedFirst = state.rootNode.fen.split(" ")[1] === "w";
-        state.isBoardFlipped = !isRedFirst; 
+        state.isBoardFlipped = !isRedFirst;
+    } else if (state.appMode === 'online') {
+        // ĐÁNH ONLINE: người cầm Đen nhìn từ phía Đen (khán giả luôn nhìn từ phía Đỏ)
+        state.isBoardFlipped = !onlineState.isSpectator && onlineState.myColor === 'black';
     } else {
         state.isBoardFlipped = false;
     }
@@ -459,6 +462,12 @@ export function handleSquareClick(x, y, iccsPos) {
         }
         if (!isOnlineSocketReady()) {
             showToast("📡 Đang mất kết nối máy chủ, chờ kết nối lại rồi đi tiếp...");
+            return;
+        }
+        if (!isOnlineAtLiveTip()) {
+            // Đang xem lại nước cũ: không cho đi từ thế cũ (sẽ lệch bàn cờ với đối thủ) → đưa về thế hiện tại
+            jumpToLiveTip();
+            showToast("⏩ Đã đưa về thế cờ hiện tại, mời bạn đi tiếp.");
             return;
         }
         if (!isMyOnlineTurn()) {
