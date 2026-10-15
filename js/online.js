@@ -70,6 +70,8 @@ export const onlineState = {
     peerConnections: new Map(),
     // Map<userId, HTMLAudioElement> — element audio riêng cho từng remote peer
     remoteAudios: new Map(),
+    // Set<userId> — danh sách những người đang bật Mic trong phòng
+    micUsers: new Set(),
     // Danh sách userId trong phòng (server gửi khi có thay đổi)
     roomMembers: [],
     // Đồng hồ tính giờ
@@ -127,9 +129,18 @@ export function formatClockTime(ms) {
 
 export function startClockTicker() {
     if (clockInterval) clearInterval(clockInterval);
+    updateClocksTick();
+
+    const timer = onlineState.timerState;
+    if (!timer || !timer.enabled || !timer.isRunning) {
+        clockInterval = null;
+        return;
+    }
+
+    // Tối ưu cho mobile: Chạy 500ms thay vì 100ms để giảm 80% tải CPU & reflow
     clockInterval = setInterval(() => {
         updateClocksTick();
-    }, 100);
+    }, 500);
 }
 
 export function stopClockTicker() {
@@ -145,8 +156,14 @@ export function updateClocksTick() {
     const botClock = document.getElementById('online-clock-bottom');
 
     if (!timer || !timer.enabled) {
-        if (topClock) { topClock.textContent = '--:--'; topClock.className = 'online-digital-clock'; }
-        if (botClock) { botClock.textContent = '--:--'; botClock.className = 'online-digital-clock'; }
+        if (topClock) {
+            if (topClock.textContent !== '--:--') topClock.textContent = '--:--';
+            if (topClock.className !== 'online-digital-clock') topClock.className = 'online-digital-clock';
+        }
+        if (botClock) {
+            if (botClock.textContent !== '--:--') botClock.textContent = '--:--';
+            if (botClock.className !== 'online-digital-clock') botClock.className = 'online-digital-clock';
+        }
         return;
     }
 
@@ -192,15 +209,19 @@ export function updateClocksTick() {
     }
 
     if (botClock) {
-        botClock.textContent = renderClockText(bottomMs, isBottomActive);
+        const text = renderClockText(bottomMs, isBottomActive);
+        if (botClock.textContent !== text) botClock.textContent = text;
         const isWarning = timer.isRunning && (bottomMs <= 30000 || (isBottomActive && stepRemainSec !== null && stepRemainSec <= 10));
-        botClock.className = 'online-digital-clock' + (isBottomActive ? ' clock-active' : '') + (isWarning ? ' time-warning' : '');
+        const newClass = 'online-digital-clock' + (isBottomActive ? ' clock-active' : '') + (isWarning ? ' time-warning' : '');
+        if (botClock.className !== newClass) botClock.className = newClass;
     }
 
     if (topClock) {
-        topClock.textContent = renderClockText(topMs, isTopActive);
+        const text = renderClockText(topMs, isTopActive);
+        if (topClock.textContent !== text) topClock.textContent = text;
         const isWarning = timer.isRunning && (topMs <= 30000 || (isTopActive && stepRemainSec !== null && stepRemainSec <= 10));
-        topClock.className = 'online-digital-clock' + (isTopActive ? ' clock-active' : '') + (isWarning ? ' time-warning' : '');
+        const newClass = 'online-digital-clock' + (isTopActive ? ' clock-active' : '') + (isWarning ? ' time-warning' : '');
+        if (topClock.className !== newClass) topClock.className = newClass;
     }
 }
 
@@ -472,22 +493,23 @@ function handleOnlineMessage(data) {
         }
         onlineState.roomMembers = members;
 
-        // Nếu mic đang bật → tạo PeerConnection tới thành viên mới
-        if (onlineState.isMicActive) {
-            const myId = getOrCreateUserId();
-            for (const m of onlineState.roomMembers) {
-                if (m.userId === myId) continue;
-                if (!onlineState.peerConnections.has(m.userId)) {
-                    createPeerForUser(m.userId);
-                    sendOfferTo(m.userId);
-                }
-            }
-        }
-
-        // Dọn dẹp PeerConnection cho người đã rời
+        // Dọn dẹp PeerConnection và micUsers cho người đã rời
         for (const [uid] of onlineState.peerConnections) {
             if (!onlineState.roomMembers.find(m => m.userId === uid)) {
                 removePeerForUser(uid);
+                onlineState.micUsers.delete(uid);
+            }
+        }
+
+        // Nếu mic hoặc camera đang bật → chỉ tạo PeerConnection tới thành viên mới nếu mình là Offerer (myId > m.userId)
+        if (onlineState.isMicActive || onlineState.isCameraActive) {
+            const myId = getOrCreateUserId();
+            for (const m of onlineState.roomMembers) {
+                if (m.userId === myId) continue;
+                if (!onlineState.peerConnections.has(m.userId) && myId > m.userId) {
+                    createPeerForUser(m.userId);
+                    sendOfferTo(m.userId);
+                }
             }
         }
         updateVoiceParticipantsUI();
@@ -1235,16 +1257,34 @@ function scrollChatToBottom() {
 
 // ============================================================
 // TÍNH NĂNG WEBRTC: VOICE CHAT & VIDEO CAMERA
-// Full Mesh Conference — hỗ trợ N người đàm thoại đồng thời
+// Full Mesh Conference — hỗ trợ N người đàm thoại đồng thời (Zoom-like)
 // ============================================================
 
 const RTC_CONFIG = {
     iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
         { urls: 'stun:stun1.l.google.com:19302' },
-        { urls: 'stun:stun2.l.google.com:19302' }
+        { urls: 'stun:stun2.l.google.com:19302' },
+        { urls: 'stun:stun.cloudflare.com:3478' }
     ]
 };
+
+// Hàng đợi lưu tạm ICE candidates nhận được trước khi setRemoteDescription hoàn tất
+const pendingIceCandidates = new Map(); // targetUserId -> Array<candidate>
+
+async function flushPendingIceCandidates(targetUserId, pc) {
+    const queue = pendingIceCandidates.get(targetUserId);
+    if (queue && queue.length > 0) {
+        while (queue.length > 0) {
+            const cand = queue.shift();
+            try {
+                await pc.addIceCandidate(new RTCIceCandidate(cand));
+            } catch (e) {
+                console.warn(`[WebRTC] Lỗi flush candidate cho ${targetUserId}:`, e);
+            }
+        }
+    }
+}
 
 // ============================
 // PEER CONNECTION MANAGER
@@ -1294,12 +1334,18 @@ function createPeerForUser(targetUserId) {
         if (event.track.kind === 'audio') {
             let audioEl = onlineState.remoteAudios.get(targetUserId);
             if (!audioEl) {
-                audioEl = new Audio();
+                audioEl = document.createElement('audio');
+                audioEl.id = `remote-audio-${targetUserId}`;
                 audioEl.autoplay = true;
+                audioEl.setAttribute('playsinline', '');
+                audioEl.setAttribute('webkit-playsinline', '');
+                // Gắn vào DOM container để mobile browser (Chrome/Safari) không chặn âm thanh
+                const container = document.getElementById('online-remote-audios') || document.body;
+                container.appendChild(audioEl);
                 onlineState.remoteAudios.set(targetUserId, audioEl);
             }
             audioEl.srcObject = event.streams[0] || new MediaStream([event.track]);
-            audioEl.play().catch(e => console.warn('[Voice] Auto-play bị chặn:', e));
+            audioEl.play().catch(e => console.warn('[Voice] Tự động phát âm thanh bị chặn (cần tương tác người dùng):', e));
         } else if (event.track.kind === 'video') {
             // Video chỉ áp dụng cho host ↔ guest
             const remoteVideo = document.getElementById('online-remote-video');
@@ -1329,9 +1375,20 @@ function createPeerForUser(targetUserId) {
     pc.oniceconnectionstatechange = () => {
         console.log(`[WebRTC] ICE ${targetUserId}: ${pc.iceConnectionState}`);
         updateVoiceParticipantsUI();
+
+        // Xử lý khi kết nối lỗi: chỉ thử restart ICE tối đa 1 lần nếu là bên Offerer
         if (pc.iceConnectionState === 'failed') {
-            console.warn(`[WebRTC] Kết nối với ${targetUserId} thất bại, thử renegotiate...`);
-            sendOfferTo(targetUserId);
+            console.warn(`[WebRTC] ICE với ${targetUserId} thất bại.`);
+            const myId = getOrCreateUserId();
+            if (myId > targetUserId && (onlineState.isMicActive || onlineState.isCameraActive) && !pc._hasRestartedIce) {
+                pc._hasRestartedIce = true;
+                setTimeout(() => {
+                    if (pc.iceConnectionState === 'failed' && (onlineState.isMicActive || onlineState.isCameraActive)) {
+                        console.log(`[WebRTC] Thử restart ICE 1 lần với ${targetUserId}...`);
+                        sendOfferTo(targetUserId, { iceRestart: true });
+                    }
+                }, 3000);
+            }
         }
     };
 
@@ -1354,10 +1411,15 @@ function removePeerForUser(targetUserId) {
         onlineState.peerConnections.delete(targetUserId);
     }
 
+    pendingIceCandidates.delete(targetUserId);
+
     const audioEl = onlineState.remoteAudios.get(targetUserId);
     if (audioEl) {
         audioEl.srcObject = null;
         audioEl.pause();
+        if (audioEl.parentNode) {
+            audioEl.parentNode.removeChild(audioEl);
+        }
         onlineState.remoteAudios.delete(targetUserId);
     }
     updateVoiceParticipantsUI();
@@ -1370,6 +1432,8 @@ function removeAllPeers() {
     }
     onlineState.peerConnections.clear();
     onlineState.remoteAudios.clear();
+    pendingIceCandidates.clear();
+    onlineState.micUsers.clear();
 }
 
 // ============================
@@ -1377,15 +1441,17 @@ function removeAllPeers() {
 // ============================
 
 // Gửi Offer tới 1 user cụ thể
-async function sendOfferTo(targetUserId) {
+async function sendOfferTo(targetUserId, options = {}) {
     const pc = getPeerForUser(targetUserId);
     if (!pc || !onlineState.ws) return;
 
     try {
-        const offer = await pc.createOffer({
+        const offerOptions = {
             offerToReceiveAudio: true,
-            offerToReceiveVideo: true
-        });
+            offerToReceiveVideo: true,
+            ...options
+        };
+        const offer = await pc.createOffer(offerOptions);
         await pc.setLocalDescription(offer);
 
         onlineState.ws.send(JSON.stringify({
@@ -1406,21 +1472,22 @@ async function handleWebRTCOffer(data) {
 
     try {
         const pc = getPeerForUser(fromUserId);
+        attachLocalTracks(pc, fromUserId);
 
-        // Nếu đang ở trạng thái stable hoặc have-local-offer, cần xử lý collision
+        // Deterministic collision handling: bên có ID lớn hơn giữ quyền offer
         if (pc.signalingState === 'have-local-offer') {
-            // Polite peer: rollback rồi nhận offer mới
             const myId = getOrCreateUserId();
-            const isPolite = myId > fromUserId; // ID lớn hơn là polite
+            const isPolite = myId < fromUserId; // Bên có ID nhỏ hơn sẽ rollback để nhận offer từ ID lớn hơn
             if (isPolite) {
                 await pc.setLocalDescription({ type: 'rollback' });
             } else {
-                // Impolite: bỏ qua offer trùng
-                return;
+                return; // Impolite peer bỏ qua offer trùng
             }
         }
 
         await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+        await flushPendingIceCandidates(fromUserId, pc);
+
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
 
@@ -1448,6 +1515,7 @@ async function handleWebRTCAnswer(data) {
     try {
         if (pc.signalingState === 'have-local-offer') {
             await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
+            await flushPendingIceCandidates(fromUserId, pc);
         }
     } catch (e) {
         console.error(`[WebRTC] Lỗi xử lý Answer từ ${fromUserId}:`, e);
@@ -1460,12 +1528,19 @@ async function handleWebRTCIce(data) {
     if (!fromUserId || !data.candidate) return;
 
     const pc = onlineState.peerConnections.get(fromUserId);
-    if (!pc) return;
+    // Nếu pc chưa sẵn sàng hoặc remoteDescription chưa set → lưu vào hàng đợi
+    if (!pc || !pc.remoteDescription || !pc.remoteDescription.type) {
+        if (!pendingIceCandidates.has(fromUserId)) {
+            pendingIceCandidates.set(fromUserId, []);
+        }
+        pendingIceCandidates.get(fromUserId).push(data.candidate);
+        return;
+    }
 
     try {
         await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
     } catch (e) {
-        console.error(`[WebRTC] Lỗi thêm ICE từ ${fromUserId}:`, e);
+        console.warn(`[WebRTC] Lỗi thêm ICE từ ${fromUserId}:`, e);
     }
 }
 
@@ -1495,7 +1570,7 @@ export async function toggleOnlineVoiceMic() {
     updateVoiceParticipantsUI();
 }
 
-// Bật mic → tạo PeerConnection tới TẤT CẢ members trong phòng
+// Bật mic → tạo PeerConnection tới các members trong phòng (chỉ gửi offer nếu myId > member.userId)
 async function startVoiceChat() {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         throw new Error('Trình duyệt không hỗ trợ truy cập Microphone!');
@@ -1513,16 +1588,21 @@ async function startVoiceChat() {
     onlineState.localStream = stream;
     onlineState.isMicActive = true;
 
-    // Gửi Offer tới MỌI thành viên trong phòng
     const myId = getOrCreateUserId();
+    onlineState.micUsers.add(myId);
+
+    // Gửi Offer tới các thành viên mà mình là Offerer (myId > member.userId)
     for (const member of onlineState.roomMembers) {
         if (member.userId === myId) continue;
-        const pc = createPeerForUser(member.userId);
-        // Track đã được thêm trong createPeerForUser
-        await sendOfferTo(member.userId);
+        const pc = getPeerForUser(member.userId);
+        attachLocalTracks(pc, member.userId);
+        if (myId > member.userId) {
+            await sendOfferTo(member.userId);
+        }
     }
 
     sendVoiceStatus(true);
+    updateVoiceParticipantsUI();
 }
 
 function stopVoiceChat() {
@@ -1533,7 +1613,10 @@ function stopVoiceChat() {
         onlineState.localStream = null;
     }
 
-    // Đóng tất cả PeerConnections (chỉ liên quan voice — giữ video nếu cam vẫn bật)
+    const myId = getOrCreateUserId();
+    onlineState.micUsers.delete(myId);
+
+    // Nếu không bật cam, dọn dẹp các peers không còn ai nói
     if (!onlineState.isCameraActive) {
         removeAllPeers();
     } else {
@@ -1547,13 +1630,6 @@ function stopVoiceChat() {
             });
         }
     }
-
-    // Xoá remote audio elements
-    for (const [uid, audioEl] of onlineState.remoteAudios) {
-        audioEl.srcObject = null;
-        audioEl.pause();
-    }
-    onlineState.remoteAudios.clear();
 
     sendVoiceStatus(false);
     updateVoiceParticipantsUI();
@@ -1709,18 +1785,24 @@ function sendVoiceStatus(isActive) {
 
 function handleVoiceStatus(data) {
     const fromName = data.fromUserName || data.fromRole || 'Ai đó';
+    const fromUserId = data.fromUserId;
+    if (!fromUserId) return;
+
     if (data.isMicActive) {
         showToast(`🎙️ ${fromName} đã bật Microphone.`);
-        // Nếu mình cũng đang bật mic → tạo kết nối tới người đó
-        if (onlineState.isMicActive && data.fromUserId) {
-            const myId = getOrCreateUserId();
-            if (data.fromUserId !== myId && !onlineState.peerConnections.has(data.fromUserId)) {
-                createPeerForUser(data.fromUserId);
-                sendOfferTo(data.fromUserId);
-            }
+        onlineState.micUsers.add(fromUserId);
+        const myId = getOrCreateUserId();
+        // Chỉ gửi Offer nếu myId > fromUserId (deterministic Offerer)
+        if (myId !== fromUserId && myId > fromUserId) {
+            const pc = getPeerForUser(fromUserId);
+            sendOfferTo(fromUserId);
         }
     } else {
         showToast(`🔇 ${fromName} đã tắt Microphone.`);
+        onlineState.micUsers.delete(fromUserId);
+        if (!onlineState.isMicActive && !onlineState.isCameraActive) {
+            removePeerForUser(fromUserId);
+        }
     }
     updateVoiceParticipantsUI();
 }
@@ -1742,14 +1824,11 @@ function updateVoiceParticipantsUI() {
         activePeers.push({ userId: myId, userName: onlineState.myUserName, isMe: true });
     }
 
-    // Thêm tất cả peers đang có kết nối active
-    for (const [uid, pc] of onlineState.peerConnections) {
-        const iceState = pc.iceConnectionState;
-        if (iceState === 'connected' || iceState === 'completed' || iceState === 'checking') {
-            const member = onlineState.roomMembers.find(m => m.userId === uid);
-            if (member) {
-                activePeers.push({ userId: uid, userName: member.userName, isMe: false });
-            }
+    // Thêm tất cả thành viên khác đang bật mic trong phòng
+    for (const member of onlineState.roomMembers) {
+        if (member.userId === myId) continue;
+        if (onlineState.micUsers.has(member.userId)) {
+            activePeers.push({ userId: member.userId, userName: member.userName, isMe: false });
         }
     }
 
