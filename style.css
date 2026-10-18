@@ -76,7 +76,7 @@ body {
     /* BÍ QUYẾT 3: Tránh bàn cờ phình to gây tràn màn hình. Khóa width theo chiều cao thực tế của PC */
     max-width: calc((100dvh - 100px) * (380 / 420));
     aspect-ratio: 380 / 420; 
-    background-image: url('style/board.webp'); 
+    background-image: var(--bg-image, url('style/board.webp')); 
     background-size: 100% 100%; 
     position: relative; 
     transition: transform 0.5s ease; 
@@ -88,10 +88,11 @@ body {
     content: "";
     position: absolute;
     top: 0; left: 0; right: 0; bottom: 0;
-    background-image: url('style/board.webp'); 
+    background-image: var(--bg-image, inherit); 
     background-size: 100% 100%; 
     background-repeat: no-repeat; 
     z-index: 0;
+    pointer-events: none;
 }
 
 /* Đảm bảo spinner loading nằm nổi lên trên canvas */

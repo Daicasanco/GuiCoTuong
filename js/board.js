@@ -107,19 +107,23 @@ export function preloadImages() {
 // HÀM TẢI LẠI RIÊNG BÀN CỜ (Dùng cho Setting)
 export function reloadBoardImage(boardPath) {
     return new Promise((resolve) => {
+        const bgUrl = `${boardPath}/board.webp`;
         const img = new Image();
-        img.src = `${boardPath}/board.webp`;
+        img.src = bgUrl;
         img.onload = () => { 
             imageCache['board'] = img;
-            requestBoardRedraw();
             const boardArea = document.getElementById('chess-board-area');
             if (boardArea) {
-                boardArea.style.backgroundImage = `url('${img.src}')`;
-                boardArea.style.setProperty('--bg-image', `url('${img.src}')`);
+                boardArea.style.backgroundImage = `url('${bgUrl}')`;
+                boardArea.style.setProperty('--bg-image', `url('${bgUrl}')`);
             }
+            requestBoardRedraw();
             resolve(); 
         };
-        img.onerror = () => { console.error(`Lỗi tải ảnh bàn cờ: ${img.src}`); resolve(); };
+        img.onerror = () => {
+            console.error(`Lỗi tải ảnh bàn cờ: ${bgUrl}`);
+            resolve(); 
+        };
     });
 }
 
@@ -216,10 +220,16 @@ export function startStudioCanvasAnimation(fromIccs, toIccs, pieceCode, startTim
 export function setBoardTheme(themeName) {
     const el = document.getElementById('chess-board-area') || document.querySelector('.board-wrapper');
     if (!el) return;
-    const saved = themeName || localStorage.getItem('boardTheme') || 'default';
-    if (!state.appSettings) state.appSettings = {};
-    state.appSettings.boardTheme = saved;
-    localStorage.setItem('boardTheme', saved);
+
+    if (!themeName) {
+        const boardPath = (state.appSettings && state.appSettings.boardStyle) || "style/1-mac_dinh";
+        const bgUrl = `${boardPath}/board.webp`;
+        el.style.backgroundImage = `url('${bgUrl}')`;
+        el.style.setProperty('--bg-image', `url('${bgUrl}')`);
+        el.style.backgroundSize = '100% 100%';
+        el.style.backgroundPosition = 'center';
+        return;
+    }
 
     const themeMap = {
         'default': 'style/board.webp',
@@ -229,10 +239,27 @@ export function setBoardTheme(themeName) {
         'contest': 'style/boards/board_contest.png',
         'modern': 'style/boards/board_modern.png'
     };
-    const bgUrl = themeMap[saved] || 'style/board.webp';
+
+    let bgUrl = themeMap[themeName] || (themeName.includes('/') ? themeName : `style/${themeName}`);
+    if (!bgUrl.endsWith('.webp') && !bgUrl.endsWith('.png') && !bgUrl.endsWith('.jpg')) {
+        bgUrl = `${bgUrl}/board.webp`;
+    }
+
+    if (!state.appSettings) state.appSettings = {};
+    state.appSettings.boardTheme = themeName;
+    localStorage.setItem('boardTheme', themeName);
+
     el.style.backgroundImage = `url('${bgUrl}')`;
+    el.style.setProperty('--bg-image', `url('${bgUrl}')`);
     el.style.backgroundSize = '100% 100%';
     el.style.backgroundPosition = 'center';
+
+    const img = new Image();
+    img.src = bgUrl;
+    img.onload = () => {
+        imageCache['board'] = img;
+        requestBoardRedraw();
+    };
 }
 
 export function initCanvas() {
@@ -945,8 +972,10 @@ function drawRiverDecoration() {
 
     // 2. Chữ "Kỳ Lý Cờ Tướng" ở giữa khúc sông với font chữ uốn lượn
     ctx.save();
+    const darkBoards = ['style/4-go_mun', 'style/6-galaxy', 'style/7-da_co', 'dark'];
+    const currentStyle = (state.appSettings && state.appSettings.boardStyle) || '';
     const currentTheme = (state.appSettings && state.appSettings.boardTheme) || localStorage.getItem('boardTheme') || 'default';
-    const isDark = currentTheme === 'dark';
+    const isDark = currentTheme === 'dark' || darkBoards.includes(currentStyle) || darkBoards.includes(currentTheme);
 
     const fontSize = Math.max(14, Math.round(riverHeight * 0.44));
     ctx.font = `700 ${fontSize}px "Charm", "Dancing Script", "Playball", cursive`;
