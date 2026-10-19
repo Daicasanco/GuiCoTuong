@@ -607,7 +607,7 @@ function publicMember(m) {
         connected: m.connected !== false,
         micOn: !!m.micOn,
         camOn: !!m.camOn,
-        vp: m.vp || 1
+        vp: m.vp || (m.ws && m.ws.clientVp) || 1
     };
 }
 
@@ -1114,20 +1114,21 @@ function handleSocketMessage(ws, messageRaw) {
                 oldGuest.disconnectTimer = null;
             }
             if (oldGuest.userId && oldGuest.connected !== false && oldGuest.ws && oldGuest.ws.readyState === 1) {
-                oldGuest.ws.isHost = false;
-                oldGuest.ws.isSpectator = true;
-                sendJson(oldGuest.ws, {
-                    type: 'DEMOTED_TO_SPECTATOR',
-                    message: 'Bạn đã được chuyển sang chế độ Khán giả xem cờ.'
-                });
-                room.spectators.set(oldGuest.userId, {
+                const demotedSpec = {
                     ws: oldGuest.ws,
                     userId: oldGuest.userId,
                     userName: oldGuest.userName,
                     connected: true,
                     micOn: !!oldGuest.micOn,
                     camOn: false,
-                    disconnectTimer: null
+                    disconnectTimer: null,
+                    vp: oldGuest.vp || (oldGuest.ws && oldGuest.ws.clientVp) || 1
+                };
+                room.spectators.set(oldGuest.userId, demotedSpec);
+                bindSocket(oldGuest.ws, roomCode, demotedSpec, 'spectator');
+                sendJson(oldGuest.ws, {
+                    type: 'DEMOTED_TO_SPECTATOR',
+                    message: 'Bạn đã được chuyển sang chế độ Khán giả xem cờ.'
                 });
             }
         }
@@ -1142,11 +1143,11 @@ function handleSocketMessage(ws, messageRaw) {
             connected: true,
             disconnectTimer: null,
             micOn: !!targetSpec.micOn,
-            camOn: false
+            camOn: false,
+            vp: targetSpec.vp || (targetSpec.ws && targetSpec.ws.clientVp) || 1
         };
+        bindSocket(targetSpec.ws, roomCode, room.guest, 'guest');
 
-        targetSpec.ws.isHost = false;
-        targetSpec.ws.isSpectator = false;
         sendJson(targetSpec.ws, {
             type: 'PROMOTED_TO_GUEST',
             myColor: guestColor,
@@ -1435,7 +1436,9 @@ function handleSocketMessage(ws, messageRaw) {
             const targetUserId = String(data.targetUserId);
             const target = getMemberByUserId(room, targetUserId);
             // 2 máy khác phiên bản giao thức voice không kết nối được với nhau → không chuyển tín hiệu
-            if (!target || (target.vp || 1) !== (member.vp || 1)) return;
+            const targetVp = (target && (target.vp || (target.ws && target.ws.clientVp))) || 1;
+            const memberVp = member.vp || (member.ws && member.ws.clientVp) || 1;
+            if (!target || targetVp !== memberVp) return;
             relay.targetUserId = targetUserId;
             sendJson(target.ws, relay);
             return;
@@ -1897,8 +1900,7 @@ function handleClientExplicitLeave(ws) {
             if (room.guest && room.guest.ws && room.guest.ws.readyState === 1) {
                 room.host = room.guest;
                 room.guest = null;
-                room.host.ws.isHost = true;
-                room.host.ws.isSpectator = false;
+                bindSocket(room.host.ws, roomCode, room.host, 'host');
                 sendJson(room.host.ws, {
                     type: 'PROMOTED_TO_HOST',
                     message: 'Chủ phòng trước đã rời đi. Bạn được chuyển thành Chủ phòng mới!'

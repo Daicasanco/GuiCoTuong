@@ -959,6 +959,8 @@ function handleOnlineMessage(data) {
 
         applyRoomMembers(data);
         reconcileVoiceMesh();
+        applyLocalTracksToAll();
+        refreshRemoteVideo();
 
         const specCountEl = document.getElementById('online-spectator-count');
         if (specCountEl) specCountEl.textContent = onlineState.spectatorCount;
