@@ -366,6 +366,9 @@ export let pendingDeleteCollectionId = null;
 let expandedCollections = new Set();
 let expandedTreeFolders = new Set();
 export let selectedLibraryCollectionId = "default_col";
+export function setSelectedLibraryCollectionId(id) {
+    selectedLibraryCollectionId = id;
+}
 export let currentLibraryList = [];
 
 export function clearAllLibraryAction() {
@@ -556,6 +559,19 @@ export function renderLibGamesList(colId, searchTerm = '', page = 1) {
         return true;
     });
 
+    // Sắp xếp ván cờ: Nếu là thư mục Lịch Sử Đấu Online hoặc có timestamp -> sắp xếp theo time gần nhất trước
+    filteredGames.sort((a, b) => {
+        const isOnlineA = a.collection_id === 'col_online_history' || a.collection_name === 'Lịch Sử Đấu Online';
+        const isOnlineB = b.collection_id === 'col_online_history' || b.collection_name === 'Lịch Sử Đấu Online';
+        if (isOnlineA || isOnlineB) {
+            const tA = Number(a.timestamp) || 0;
+            const tB = Number(b.timestamp) || 0;
+            if (tA && tB && tA !== tB) return tB - tA; // Ván mới nhất lên đầu
+            return (b.file_name || '').localeCompare(a.file_name || '');
+        }
+        return 0;
+    });
+
     const totalGames = filteredGames.length;
     if (totalGames === 0) {
         container.innerHTML = `<div style="text-align: center; color: #888; margin-top: 20px; font-size: 12px;">Không tìm thấy ván đấu nào</div>`;
@@ -579,19 +595,28 @@ export function renderLibGamesList(colId, searchTerm = '', page = 1) {
                         <tr style="border-bottom: 2px solid #ddd; background: #fafafa; font-weight: bold; color: #555; font-size: 11px;">
                             <th style="padding: 6px 4px; width: 32px; text-align: center;">STT</th>
                             <th style="padding: 6px 4px;">Tên bài/ván</th>
-                            <th style="padding: 6px 4px; width: 32px; text-align: center;">Xóa</th>
+                            <th style="padding: 6px 4px; width: 56px; text-align: center;">Tác vụ</th>
                         </tr>
                     </thead>
                     <tbody>
                         ${pageGames.map((game, idx) => {
                             const globalIdx = startIdx + idx + 1;
                             const isActive = state.activeLibraryGameId === game.id_key;
+                            const subtitle = (game.red || game.black)
+                                ? `<div style="font-size: 11px; color: #64748b; font-weight: normal; margin-top: 2px;">🔴 ${game.red || 'Đỏ'} vs ⚫ ${game.black || 'Đen'}${game.moves_count ? ` (${game.moves_count} nước)` : ''}</div>`
+                                : '';
                             return `
                                 <tr class="lib-game-row ${isActive ? 'lib-game-active' : ''}" data-idkey="${game.id_key}" data-filename="${game.file_name}" style="border-bottom: 1px solid #eee; cursor: pointer; transition: background 0.1s; background: ${isActive ? '#f0fdf4' : 'transparent'};">
                                     <td style="padding: 6px 4px; text-align: center; color: #666; font-weight: ${isActive ? 'bold' : 'normal'}; vertical-align: top;">${globalIdx}</td>
-                                    <td style="padding: 6px 4px; font-weight: ${isActive ? 'bold' : 'normal'}; color: ${isActive ? '#008a3e' : '#333'}; word-break: break-word; line-height: 1.35; vertical-align: top;" title="${game.file_name}">${game.file_name}</td>
-                                    <td style="padding: 6px 4px; text-align: center; vertical-align: top;">
-                                        <button class="lib-btn-del-single" data-idkey="${game.id_key}" data-filename="${game.file_name}" style="background: transparent; border: none; cursor: pointer; color: #ef4444; padding: 2px; display: inline-flex; align-items: center;">
+                                    <td style="padding: 6px 4px; font-weight: ${isActive ? 'bold' : 'normal'}; color: ${isActive ? '#008a3e' : '#333'}; word-break: break-word; line-height: 1.35; vertical-align: top;" title="${game.file_name}">
+                                        ${game.file_name}
+                                        ${subtitle}
+                                    </td>
+                                    <td style="padding: 6px 4px; text-align: center; vertical-align: top; white-space: nowrap;">
+                                        <button class="lib-btn-dl-single" data-idkey="${game.id_key}" data-filename="${game.file_name}" title="Tải tệp .cbl về máy" style="background: transparent; border: none; cursor: pointer; color: #10b981; padding: 2px 3px; display: inline-flex; align-items: center;">
+                                            <svg viewBox="0 0 24 24" width="13" height="13"><path fill="currentColor" d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+                                        </button>
+                                        <button class="lib-btn-del-single" data-idkey="${game.id_key}" data-filename="${game.file_name}" title="Xóa ván này" style="background: transparent; border: none; cursor: pointer; color: #ef4444; padding: 2px 3px; display: inline-flex; align-items: center;">
                                             <svg viewBox="0 0 24 24" width="12" height="12"><path fill="currentColor" d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
                                         </button>
                                     </td>
@@ -630,9 +655,16 @@ export function renderLibGamesList(colId, searchTerm = '', page = 1) {
         };
     }
 
-    // Click handler cho dòng ván đấu
+    // Click handler cho dòng ván đấu và các nút tác vụ
     container.querySelectorAll('.lib-game-row').forEach(row => {
         row.onclick = (e) => {
+            const dlSingleBtn = e.target.closest('.lib-btn-dl-single');
+            if (dlSingleBtn) {
+                e.stopPropagation();
+                exportSingleGameAsCBL(dlSingleBtn.dataset.idkey, dlSingleBtn.dataset.filename);
+                return;
+            }
+
             const delSingleBtn = e.target.closest('.lib-btn-del-single');
             if (delSingleBtn) {
                 e.stopPropagation();
@@ -649,9 +681,38 @@ export function renderLibGamesList(colId, searchTerm = '', page = 1) {
     });
 }
 
+// Xuất riêng lẻ 1 ván cờ ra tệp .cbl
+export async function exportSingleGameAsCBL(idKey, rawFileName) {
+    showLoading("Đang xuất file .cbl...");
+    try {
+        const { getWorkspace } = await import('./db.js');
+        const { createCBLBinaryFromGames, downloadFile } = await import('./io.js');
+        const textData = await getWorkspace(idKey);
+        if (!textData) {
+            showToast("❌ Không tìm thấy dữ liệu ván cờ!");
+            hideLoading();
+            return;
+        }
+        let cleanName = (rawFileName || "van_co").replace(/\.cbl$/i, "");
+        const cblBuffer = createCBLBinaryFromGames([{ file_name: cleanName, dataText: textData }]);
+        downloadFile(cleanName + ".cbl", cblBuffer, true);
+        showToast(`✅ Đã tải file "${cleanName}.cbl"!`);
+    } catch (e) {
+        console.error(e);
+        showToast("❌ Lỗi khi xuất file .cbl!");
+    }
+    hideLoading();
+}
+
 // Logic Nạp ván cờ từ Thư viện
-// Logic Nạp ván cờ từ Thư viện
-async function loadGameFromLibrary(idKey) {
+export async function loadGameFromLibrary(idKey) {
+    if (state.appMode === 'online') {
+        const confirmExit = window.confirm("Bạn đang trong phòng thi đấu online. Mở ván cờ này sẽ rời khỏi phòng online để vào chế độ phân tích. Bạn có chắc muốn tiếp tục?");
+        if (!confirmExit) return;
+        const { leaveOnlineRoom } = await import('./online.js');
+        leaveOnlineRoom({ notifyServer: true, silent: true });
+    }
+
     showLoading("Đang mở ván cờ...");
     try {
         const textData = await getWorkspace(idKey);
@@ -668,8 +729,8 @@ async function loadGameFromLibrary(idKey) {
                 state.appSettings.appMode = 'analyze';
                 state.activeLibraryGameId = idKey;
                 
-                // 1. Dọn dẹp CSS của chế độ Bot / Cờ mù / Luyện Nhớ Ván
-                document.body.classList.remove('mode-vsbot', 'mode-blind', 'mode-memorize');
+                // 1. Dọn dẹp CSS của chế độ Bot / Cờ mù / Luyện Nhớ Ván / Online
+                document.body.classList.remove('mode-vsbot', 'mode-blind', 'mode-memorize', 'mode-online');
                 const navBar = document.getElementById('nav-bar');
                 if (navBar) { navBar.style.opacity = '1'; navBar.style.pointerEvents = 'auto'; }
                 state.isPeeking = false;

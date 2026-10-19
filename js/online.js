@@ -4,6 +4,9 @@ import { showToast, showLoading, hideLoading, openModal, closeModal, updateTurnT
 import { initGame, executeMove, getMainLine, instantJumpToNode } from './game.js';
 import { START_FEN } from './config.js';
 import { clearUserDrawLines, renderBoardFull } from './board.js';
+import { getVschessNodeTree, createCBLBinaryFromGames, downloadFile } from './io.js';
+import { getWorkspace, saveWorkspace, deleteWorkspace } from './db.js';
+import { exportSingleGameAsCBL, loadGameFromLibrary } from './ui.js';
 
 // Escape HTML cho mọi dữ liệu do người chơi khác gửi (tên, chat) trước khi chèn bằng innerHTML
 function escapeHtml(value) {
@@ -110,7 +113,11 @@ export const onlineState = {
     spectatorsList: [],
     players: { host: null, guest: null },
     // Chat UI state
-    unreadChatCount: 0
+    unreadChatCount: 0,
+    // Lịch sử biên bản đấu online (CBL)
+    matchStartTime: null,
+    currentMatchIdKey: null,
+    lastSavedSignature: null
 };
 
 export function isOnlineMode() {
@@ -1026,6 +1033,7 @@ function handleOnlineMessage(data) {
         onlineState.timerState.isRunning = false;
         updateClocksTick();
         stopClockTicker();
+        saveCurrentOnlineMatchRecord({ result: data.message || 'Hết giờ' });
         notify(data.message || '⏰ Hết giờ!');
         return;
     }
@@ -1210,6 +1218,11 @@ function handleOnlineMessage(data) {
 
     // 13. VÁN MỚI
     if (type === 'GAME_RESET') {
+        saveCurrentOnlineMatchRecord({ result: 'Ván mới' });
+        onlineState.matchStartTime = Date.now();
+        onlineState.currentMatchIdKey = null;
+        onlineState.lastSavedSignature = null;
+
         onlineState.currentTurn = data.currentTurn || 'w';
         if (data.timer) {
             onlineState.timerState = data.timer;
@@ -1229,6 +1242,7 @@ function handleOnlineMessage(data) {
 
     // 14. CHỦ PHÒNG RỜI ĐI HẲN (PHÒNG ĐÓNG)
     if (type === 'HOST_LEFT') {
+        saveCurrentOnlineMatchRecord({ result: 'Chủ phòng rời' });
         notify('🚪 ' + (data.message || 'Chủ phòng đã rời phòng!'));
         sessionStorage.removeItem('tuongky_active_room');
         teardownVoice();
@@ -1246,6 +1260,7 @@ function handleOnlineMessage(data) {
 
     // 15. KHÁCH RỜI ĐI HẲN (voice với các khán giả vẫn giữ nguyên)
     if (type === 'GUEST_LEFT') {
+        saveCurrentOnlineMatchRecord({ result: 'Đối thủ rời' });
         notify('🚪 ' + (data.message || 'Đối thủ đã rời đi.'));
         onlineState.opponentJoined = false;
         onlineState.opponentConnected = false;
@@ -1317,6 +1332,12 @@ async function enterOnlineGame(initialFen, myColor, rejoin = false) {
     state.appMode = 'online';
     state.appSettings.appMode = 'online';
     document.body.classList.add('mode-online');
+
+    if (!rejoin) {
+        onlineState.matchStartTime = Date.now();
+        onlineState.currentMatchIdKey = null;
+        onlineState.lastSavedSignature = null;
+    }
 
     // CẤM BẬT THẨM / TẮT HOÀN TOÀN ENGINE PIKAFISH
     state.isAnalyzing = false;
@@ -1569,6 +1590,11 @@ export function sendResetGame() {
 // Rời phòng (notifyServer=false: phòng đã đóng / phiên bị thay thế → chỉ dọn dẹp phía máy mình)
 export function leaveOnlineRoom(options = {}) {
     const { notifyServer = true, silent = false } = options || {};
+    try {
+        saveCurrentOnlineMatchRecord({ result: 'Rời phòng' });
+    } catch (e) {
+        console.error('[Online] Lỗi lưu biên bản trận đấu:', e);
+    }
     sessionStorage.removeItem('tuongky_active_room');
 
     if (notifyServer && onlineState.roomCode) {
@@ -3050,3 +3076,338 @@ export function checkAndResumeSavedRoom() {
     // Không tự động kết nối lại khi tải trang để tránh nhảy vào phòng ngoài ý muốn
     sessionStorage.removeItem('tuongky_active_room');
 }
+
+// ============================================================
+// HỆ THỐNG LỊCH SỬ BIÊN BẢN CÁC VÁN ĐẤU ONLINE (ĐỊNH DẠNG .CBL)
+// ============================================================
+
+// Định dạng tên tệp CBL theo thời gian đánh (YYYY-MM-DD_HH-mm-ss.cbl)
+export function formatMatchTimeFileName(timestamp) {
+    const d = new Date(timestamp || Date.now());
+    const pad = n => String(n).padStart(2, '0');
+    const yyyy = d.getFullYear();
+    const mm = pad(d.getMonth() + 1);
+    const dd = pad(d.getDate());
+    const hh = pad(d.getHours());
+    const min = pad(d.getMinutes());
+    const ss = pad(d.getSeconds());
+    return `${yyyy}-${mm}-${dd}_${hh}-${min}-${ss}.cbl`;
+}
+
+// Lưu ván đấu online hiện tại vào Thư Viện Cờ dưới dạng CBL (IndexedDB)
+export async function saveCurrentOnlineMatchRecord(extra = {}) {
+    try {
+        if (!state.rootNode) return null;
+
+        // Đếm tổng số nước đi (plies) trong ván
+        let movesCount = 0;
+        let curr = state.rootNode;
+        while (curr && curr.children && curr.children.length > 0) {
+            movesCount++;
+            curr = curr.children[curr.mainLineIndex || 0];
+        }
+
+        // Nếu ván cờ chưa có nước đi nào hoặc chỉ mới đi 1 nước dở dang (< 2 plies) thì không lưu rác
+        if (movesCount < 2) return null;
+
+        const startTime = onlineState.matchStartTime || Date.now();
+        const signature = `${onlineState.roomCode || 'free'}_${startTime}_${movesCount}`;
+
+        // Tránh lưu lặp nếu đã lưu chính xác số nước này
+        if (onlineState.lastSavedSignature === signature) {
+            return null;
+        }
+
+        const vsNode = getVschessNodeTree(state.rootNode);
+        if (!vsNode || typeof vschess === 'undefined') return null;
+
+        // Xác định tên hai bên Đỏ - Đen
+        let redName = 'Quân Đỏ';
+        let blackName = 'Quân Đen';
+        if (onlineState.myColor === 'red') {
+            redName = onlineState.myUserName || 'Quân Đỏ';
+            blackName = onlineState.opponentUserName || 'Quân Đen';
+        } else if (onlineState.myColor === 'black') {
+            blackName = onlineState.myUserName || 'Quân Đen';
+            redName = onlineState.opponentUserName || 'Quân Đỏ';
+        } else if (onlineState.players) {
+            const h = onlineState.players.host;
+            const g = onlineState.players.guest;
+            if (h && h.color === 'red') {
+                redName = h.userName || 'Chủ phòng (Đỏ)';
+                blackName = (g && g.userName) || 'Khách (Đen)';
+            } else if (h && h.color === 'black') {
+                blackName = h.userName || 'Chủ phòng (Đen)';
+                redName = (g && g.userName) || 'Khách (Đỏ)';
+            }
+        }
+
+        const fileName = formatMatchTimeFileName(startTime);
+        const d = new Date(startTime);
+        const pad = n => String(n).padStart(2, '0');
+        const dateStr = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+        const timeStr = `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+
+        const gameInfo = {
+            title: fileName,
+            event: `Online - Phòng [${onlineState.roomCode || 'Tự do'}]`,
+            red: redName,
+            black: blackName,
+            date: dateStr,
+            time: timeStr,
+            group: 'Lịch Sử Đấu Online',
+            result: (extra && extra.result) || '*'
+        };
+
+        const gameDataText = vschess.nodeToData_DhtmlXQ(vsNode, gameInfo, false);
+        if (!gameDataText) return null;
+
+        let idKey = onlineState.currentMatchIdKey;
+        if (!idKey) {
+            idKey = 'cbl_online_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+            onlineState.currentMatchIdKey = idKey;
+        }
+
+        await saveWorkspace(idKey, gameDataText);
+
+        let libraryList = await getWorkspace('library_workspace') || [];
+        const existingIdx = libraryList.findIndex(item => item.id_key === idKey);
+        const matchItem = {
+            id_key: idKey,
+            file_name: fileName,
+            collection_id: 'col_online_history',
+            collection_name: 'Lịch Sử Đấu Online',
+            timestamp: startTime,
+            red: redName,
+            black: blackName,
+            moves_count: movesCount,
+            room_code: onlineState.roomCode || ''
+        };
+
+        if (existingIdx >= 0) {
+            libraryList[existingIdx] = matchItem;
+        } else {
+            libraryList.unshift(matchItem);
+        }
+
+        await saveWorkspace('library_workspace', libraryList);
+        onlineState.lastSavedSignature = signature;
+
+        return { idKey, fileName, matchItem };
+    } catch (e) {
+        console.error('[Online] Lỗi lưu biên bản trận đấu:', e);
+        return null;
+    }
+}
+
+// Render danh sách ván đấu trong modal lịch sử
+export async function renderOnlineHistoryModal(searchTerm = '') {
+    const listEl = document.getElementById('online-history-list');
+    const badgeEl = document.getElementById('online-history-count-badge');
+    if (!listEl) return;
+
+    listEl.innerHTML = '<div style="text-align: center; color: #64748b; padding: 20px 0; font-size: 12.5px;">⏳ Đang tải lịch sử ván đấu...</div>';
+
+    try {
+        const rawList = await getWorkspace('library_workspace') || [];
+        let onlineGames = rawList.filter(item => 
+            item.collection_id === 'col_online_history' || 
+            item.collection_name === 'Lịch Sử Đấu Online'
+        );
+
+        // Sắp xếp ván đấu mới nhất lên đầu
+        onlineGames.sort((a, b) => {
+            const tA = Number(a.timestamp) || 0;
+            const tB = Number(b.timestamp) || 0;
+            if (tA && tB && tA !== tB) return tB - tA;
+            return (b.file_name || '').localeCompare(a.file_name || '');
+        });
+
+        if (badgeEl) {
+            badgeEl.textContent = `${onlineGames.length} ván`;
+        }
+
+        if (searchTerm) {
+            const q = searchTerm.trim().toLowerCase();
+            onlineGames = onlineGames.filter(g => 
+                (g.file_name && g.file_name.toLowerCase().includes(q)) ||
+                (g.red && g.red.toLowerCase().includes(q)) ||
+                (g.black && g.black.toLowerCase().includes(q)) ||
+                (g.room_code && g.room_code.toLowerCase().includes(q))
+            );
+        }
+
+        if (onlineGames.length === 0) {
+            listEl.innerHTML = `
+                <div style="text-align: center; color: #64748b; padding: 30px 15px; font-size: 13px; line-height: 1.5;">
+                    <div style="font-size: 32px; margin-bottom: 8px;">📂</div>
+                    <strong>${searchTerm ? 'Không tìm thấy ván đấu phù hợp' : 'Chưa có ván đấu online nào được lưu'}</strong>
+                    <div style="font-size: 11.5px; color: #94a3b8; margin-top: 4px;">
+                        ${searchTerm ? 'Thử tìm kiếm với từ khóa khác' : 'Các ván cờ bạn đánh online sẽ tự động được lưu thành file .cbl tại đây'}
+                    </div>
+                </div>
+            `;
+            return;
+        }
+
+        listEl.innerHTML = onlineGames.map((item) => {
+            const movesText = item.moves_count ? `${item.moves_count} nước` : '';
+            return `
+                <div class="online-history-card" data-idkey="${item.id_key}" style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; box-shadow: 0 1px 2px rgba(0,0,0,0.03);">
+                    <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+                        <div style="display: flex; align-items: center; gap: 6px; font-weight: 700; font-size: 13px; color: #1e293b; overflow: hidden;">
+                            <span style="font-size: 15px; flex-shrink: 0;">📁</span>
+                            <span style="word-break: break-all;" title="${escapeHtml(item.file_name)}">${escapeHtml(item.file_name)}</span>
+                        </div>
+                        ${movesText ? `<span style="font-size: 11px; color: #475569; background: #f1f5f9; padding: 2px 6px; border-radius: 4px; white-space: nowrap; font-weight: 600; flex-shrink: 0;">${movesText}</span>` : ''}
+                    </div>
+                    <div style="display: flex; align-items: center; justify-content: space-between; font-size: 12px; color: #475569;">
+                        <div>
+                            <span style="color: #dc2626; font-weight: bold;">🔴 ${escapeHtml(item.red || 'Đỏ')}</span>
+                            <span style="color: #94a3b8; margin: 0 4px;">vs</span>
+                            <span style="color: #1e293b; font-weight: bold;">⚫ ${escapeHtml(item.black || 'Đen')}</span>
+                        </div>
+                        ${item.room_code ? `<span style="font-size: 11px; color: #0284c7; font-weight: 600;">Phòng: ${escapeHtml(item.room_code)}</span>` : ''}
+                    </div>
+                    <div style="display: flex; align-items: center; justify-content: flex-end; gap: 6px; margin-top: 4px; padding-top: 6px; border-top: 1px dashed #f1f5f9;">
+                        <button class="btn-online-hist-play" data-idkey="${item.id_key}"
+                            style="background: #008a3e; color: #fff; border: none; border-radius: 5px; padding: 4px 10px; font-size: 11.5px; font-weight: bold; cursor: pointer; display: flex; align-items: center; gap: 4px;">
+                            👁️ Mở Ván
+                        </button>
+                        <button class="btn-online-hist-dl" data-idkey="${item.id_key}" data-filename="${escapeHtml(item.file_name)}"
+                            style="background: #f0fdf4; color: #008a3e; border: 1px solid #bbf7d0; border-radius: 5px; padding: 4px 8px; font-size: 11.5px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 4px;" title="Tải tệp .cbl về máy">
+                            💾 Tải .cbl
+                        </button>
+                        <button class="btn-online-hist-del" data-idkey="${item.id_key}" data-filename="${escapeHtml(item.file_name)}"
+                            style="background: #fff; color: #ef4444; border: 1px solid #fecaca; border-radius: 5px; padding: 4px 8px; font-size: 11.5px; cursor: pointer; display: flex; align-items: center;" title="Xóa ván này">
+                            🗑️
+                        </button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        listEl.querySelectorAll('.btn-online-hist-play').forEach(btn => {
+            btn.onclick = async () => {
+                const idKey = btn.dataset.idkey;
+                closeModal('online-history-modal');
+                await loadGameFromLibrary(idKey);
+            };
+        });
+
+        listEl.querySelectorAll('.btn-online-hist-dl').forEach(btn => {
+            btn.onclick = () => {
+                exportSingleGameAsCBL(btn.dataset.idkey, btn.dataset.filename);
+            };
+        });
+
+        listEl.querySelectorAll('.btn-online-hist-del').forEach(btn => {
+            btn.onclick = () => {
+                deleteSingleOnlineMatch(btn.dataset.idkey, btn.dataset.filename);
+            };
+        });
+
+    } catch (e) {
+        console.error('[Online] Lỗi tải lịch sử ván đấu:', e);
+        listEl.innerHTML = '<div style="text-align: center; color: #ef4444; padding: 20px 0; font-size: 12.5px;">❌ Lỗi khi đọc dữ liệu lịch sử!</div>';
+    }
+}
+
+// Xóa 1 ván đấu online
+export async function deleteSingleOnlineMatch(idKey, fileName) {
+    if (!window.confirm(`Bạn có chắc chắn muốn xóa ván đấu "${fileName}" khỏi lịch sử?`)) return;
+    try {
+        await deleteWorkspace(idKey);
+        let list = await getWorkspace('library_workspace') || [];
+        list = list.filter(item => item.id_key !== idKey);
+        await saveWorkspace('library_workspace', list);
+        showToast("✅ Đã xóa ván cờ khỏi lịch sử!");
+        const searchInput = document.getElementById('online-history-search');
+        renderOnlineHistoryModal(searchInput ? searchInput.value : '');
+        const { renderLibraryList } = await import('./ui.js');
+        renderLibraryList();
+    } catch (e) {
+        console.error(e);
+        showToast("❌ Lỗi khi xóa ván cờ!");
+    }
+}
+
+// Xóa sạch toàn bộ lịch sử đấu online
+export async function clearAllOnlineHistory() {
+    if (!window.confirm("Bạn có chắc chắn muốn XÓA TOÀN BỘ lịch sử các ván đấu online trên máy này không? Hành động này không thể hoàn tác.")) return;
+    try {
+        showLoading("Đang xóa toàn bộ lịch sử...");
+        let list = await getWorkspace('library_workspace') || [];
+        const toDelete = list.filter(item => 
+            item.collection_id === 'col_online_history' || 
+            item.collection_name === 'Lịch Sử Đấu Online'
+        );
+        for (let item of toDelete) {
+            await deleteWorkspace(item.id_key);
+        }
+        const remaining = list.filter(item => 
+            item.collection_id !== 'col_online_history' && 
+            item.collection_name !== 'Lịch Sử Đấu Online'
+        );
+        await saveWorkspace('library_workspace', remaining);
+        hideLoading();
+        showToast("✅ Đã xóa toàn bộ lịch sử đấu online!");
+        renderOnlineHistoryModal();
+        const { renderLibraryList } = await import('./ui.js');
+        renderLibraryList();
+    } catch (e) {
+        hideLoading();
+        console.error(e);
+        showToast("❌ Lỗi khi xóa lịch sử!");
+    }
+}
+
+// Xuất tất cả các ván đấu online ra 1 tệp .cbl duy nhất
+export async function exportAllOnlineMatchesAsCBL() {
+    showLoading("Đang xuất tất cả ván cờ ra file .cbl...");
+    try {
+        const rawList = await getWorkspace('library_workspace') || [];
+        const onlineGames = rawList.filter(item => 
+            item.collection_id === 'col_online_history' || 
+            item.collection_name === 'Lịch Sử Đấu Online'
+        );
+
+        if (onlineGames.length === 0) {
+            hideLoading();
+            showToast("ℹ️ Không có ván đấu online nào để xuất!");
+            return;
+        }
+
+        let gamesList = [];
+        for (let item of onlineGames) {
+            const textData = await getWorkspace(item.id_key);
+            if (textData) {
+                gamesList.push({
+                    file_name: item.file_name,
+                    collection_name: item.collection_name || 'Lịch Sử Đấu Online',
+                    dataText: textData
+                });
+            }
+        }
+
+        const cblBuffer = createCBLBinaryFromGames(gamesList);
+        const fileName = `LichSuDauOnline_${formatMatchTimeFileName(Date.now()).replace(/\.cbl$/i, '')}.cbl`;
+        downloadFile(fileName, cblBuffer, true);
+        showToast(`✅ Đã xuất ${gamesList.length} ván ra tệp "${fileName}"!`);
+    } catch (e) {
+        console.error(e);
+        showToast("❌ Lỗi khi xuất tệp .cbl!");
+    }
+    hideLoading();
+}
+
+// Mở modal lịch sử đấu online
+export async function openOnlineHistoryModal() {
+    // Nếu đang trong phòng online mà có nước đi chưa lưu -> lưu ngay trước khi xem
+    if (onlineState.roomCode) {
+        await saveCurrentOnlineMatchRecord({ result: 'Đang đấu' });
+    }
+    openModal('online-history-modal');
+    renderOnlineHistoryModal();
+}
+

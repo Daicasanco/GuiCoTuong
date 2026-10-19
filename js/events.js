@@ -12,7 +12,7 @@ import { uploadLocalBook, deleteLocalBook, loadLocalBookFromDB } from './localbo
 import { renderEvalGraph } from './analysis/eval-graph.js';
 import { runAutoGameReview } from './analysis/auto-review.js';
 import { runAIAnnotation } from './analysis/ai-annotate.js';
-import { createOnlineRoom, joinOnlineRoom, leaveOnlineRoom, sendHostSetTurn, sendHostSwapSides, sendResetGame, updateOnlineRoomBar, onlineState, toggleOnlineVoiceMic, sendOnlineChat, toggleChatBox, getOnlineUserName, setOnlineUserName, toggleOnlineCamera, sendTimerSettings, renderSpectatorsModalList, substituteGuest, toggleOnlineSpeaker, unlockRemoteAudio, jumpToLiveTip, chooseOnlineInfoPane, toggleHostControls, toggleOnlineMovesPanel, requestOnlineUndo } from './online.js';
+import { createOnlineRoom, joinOnlineRoom, leaveOnlineRoom, sendHostSetTurn, sendHostSwapSides, sendResetGame, updateOnlineRoomBar, onlineState, toggleOnlineVoiceMic, sendOnlineChat, toggleChatBox, getOnlineUserName, setOnlineUserName, toggleOnlineCamera, sendTimerSettings, renderSpectatorsModalList, substituteGuest, toggleOnlineSpeaker, unlockRemoteAudio, jumpToLiveTip, chooseOnlineInfoPane, toggleHostControls, toggleOnlineMovesPanel, requestOnlineUndo, openOnlineHistoryModal, clearAllOnlineHistory, exportAllOnlineMatchesAsCBL, renderOnlineHistoryModal } from './online.js';
 
 let pendingDeletePuzKey = "";
 
@@ -985,6 +985,15 @@ export function initEvents() {
             if (libTabBtn) libTabBtn.click();
         };
     }
+
+    // ====== Lịch Sử Đấu Online ======
+    const menuOnlineHistory = document.getElementById('menu-online-history');
+    if (menuOnlineHistory) {
+        menuOnlineHistory.onclick = () => {
+            closeModal('main-menu-modal');
+            openOnlineHistoryModal();
+        };
+    }
     const btnDelLibCancel = document.getElementById('btn-del-lib-cancel');
     if (btnDelLibCancel) btnDelLibCancel.onclick = () => closeModal('delete-lib-modal');
 
@@ -1803,7 +1812,12 @@ export function initEvents() {
                     
                     const { selectedLibraryCollectionId } = await import('./ui.js');
                     if (selectedLibraryCollectionId && selectedLibraryCollectionId !== "ALL_LIBRARY") {
-                        itemsToExport = rawList.filter(item => item.collection_id === selectedLibraryCollectionId);
+                        if (selectedLibraryCollectionId.startsWith("folder_path:")) {
+                            const folder = selectedLibraryCollectionId.replace("folder_path:", "");
+                            itemsToExport = rawList.filter(item => item.collection_name && (item.collection_name === folder || item.collection_name.startsWith(folder + '/')));
+                        } else {
+                            itemsToExport = rawList.filter(item => item.collection_id === selectedLibraryCollectionId);
+                        }
                     }
                     if (itemsToExport.length === 0) itemsToExport = rawList;
 
@@ -3075,6 +3089,14 @@ function initOnlineEvents() {
         };
     }
 
+    // Nút Xem Lịch Sử Ván Đấu Online trong Modal Phòng
+    const btnOpenOnlineHistory = document.getElementById('btn-open-online-history');
+    if (btnOpenOnlineHistory) {
+        btnOpenOnlineHistory.onclick = () => {
+            openOnlineHistoryModal();
+        };
+    }
+
     // 6. Sao chép link / mã phòng
     const btnCopyRoomCode = document.getElementById('btn-copy-roomcode');
     if (btnCopyRoomCode) {
@@ -3194,6 +3216,43 @@ function initOnlineEvents() {
     if (btnCloseChat) {
         btnCloseChat.onclick = () => {
             toggleChatBox(false);
+        };
+    }
+
+    // 8.1 Nút Lịch Sử trên thanh Online Room Bar
+    const btnOnlineHistory = document.getElementById('btn-online-history');
+    if (btnOnlineHistory) {
+        btnOnlineHistory.onclick = () => {
+            openOnlineHistoryModal();
+        };
+    }
+
+    // ====== Modal Lịch Sử Đấu Online ======
+    const btnCloseOnlineHistoryModal = document.getElementById('btn-close-online-history-modal');
+    if (btnCloseOnlineHistoryModal) {
+        btnCloseOnlineHistoryModal.onclick = () => {
+            closeModal('online-history-modal');
+        };
+    }
+
+    const onlineHistorySearch = document.getElementById('online-history-search');
+    if (onlineHistorySearch) {
+        onlineHistorySearch.oninput = (e) => {
+            renderOnlineHistoryModal(e.target.value);
+        };
+    }
+
+    const btnExportAllOnlineHistory = document.getElementById('btn-export-all-online-history');
+    if (btnExportAllOnlineHistory) {
+        btnExportAllOnlineHistory.onclick = () => {
+            exportAllOnlineMatchesAsCBL();
+        };
+    }
+
+    const btnClearOnlineHistory = document.getElementById('btn-clear-online-history');
+    if (btnClearOnlineHistory) {
+        btnClearOnlineHistory.onclick = () => {
+            clearAllOnlineHistory();
         };
     }
 
